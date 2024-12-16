@@ -4,7 +4,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class WC_POR_Gateway extends WC_Payment_Gateway {
+class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
 
     private $order_status;
 
@@ -71,11 +71,11 @@ class WC_POR_Gateway extends WC_Payment_Gateway {
                 'default' => 'yes',
             ),
             'order_status' => array(
-						'title' => __( 'Order Status After The Checkout', 'woocommerce-other-payment-gateway' ),
+						'title' => __( 'Order Status After The Checkout', 'por-payment-gateway' ),
 						'type' => 'select',
 						'options' => wc_get_order_statuses(),
 						'default' => 'wc-processing',
-						'description' 	=> __( 'The default order status if this gateway used in payment.', 'woocommerce-other-payment-gateway' ),
+						'description' 	=> __( 'The default order status if this gateway used in payment.', 'por-payment-gateway' ),
 					),
             'email' => array(
                 'title' => 'Email',
