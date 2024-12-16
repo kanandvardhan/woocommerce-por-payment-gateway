@@ -34,6 +34,9 @@ if ( ! in_array( 'woocommerce/woocommerce.php', apply_filters( 'active_plugins',
     add_action( 'plugins_loaded', 'por_payment_gateway_init' );
     add_filter( 'plugin_action_links_' . plugin_basename( __FILE__ ), 'por_payment_gateway_settings_link' );
     add_filter( 'woocommerce_payment_gateways', 'add_por_gateway_class' );
+    add_action('wp_enqueue_scripts', 'por_enqueue_custom_scripts');
+    add_action('wp_footer', 'por_add_payment_modal');
+
 }
 
 /**
@@ -84,5 +87,36 @@ function por_log( $message ) {
     if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
         $logger = wc_get_logger();
         $logger->debug( $message, array( 'source' => 'por-payment-gateway' ) );
+    }
+}
+
+
+function por_enqueue_custom_scripts() {
+    wp_enqueue_script('jquery');
+    wp_enqueue_script('por-custom-js', POR_PAYMENT_GATEWAY_PLUGIN_URL . 'assets/js/por-custom.js', array('jquery'), POR_PAYMENT_GATEWAY_VERSION, true);
+
+    // Pass PHP variables to JavaScript
+    wp_localize_script('por-custom-js', 'por_gateway_params', array(
+        'ajax_url' => admin_url('admin-ajax.php'),
+        'order_id' => get_query_var('order-received'), // Use actual order ID if available
+    ));
+
+    wp_enqueue_style('por-custom-css', POR_PAYMENT_GATEWAY_PLUGIN_URL . 'assets/css/por-custom.css', array(), POR_PAYMENT_GATEWAY_VERSION);
+}
+
+function por_add_payment_modal() {
+    // Render the modal only on the WooCommerce checkout page
+    if (is_checkout() && !is_order_received_page()) {
+        ?>
+        <div id="por-payment-modal">
+            <div class="por-modal-content">
+                <div id="por-modal-body">
+                    <p id="payment-instructions"></p>
+                    <img id="qr-code-image" src="" alt="QR Code" style="display:none; max-width:200px; margin: 20px auto;">
+                    <button id="por-payment-confirm-btn" class="button">I have completed the payment</button>
+                </div>
+            </div>
+        </div>
+        <?php
     }
 }

@@ -1,0 +1,29 @@
+#por-payment-modal {
+  display: none;
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.6);
+}
+
+.por-modal-content {
+  background-color: #fff;
+  margin: 10% auto;
+  padding: 20px;
+  border-radius: 10px;
+  text-align: center;
+  width: 50%;
+  max-width: 500px;
+}
+
+.por-modal-content img {
+  display: block;
+  margin: 0 auto;
+}
+
+/* body.modal-open {
+  overflow: hidden;
+} */

@@ -32,6 +32,8 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
 
         // Save admin options.
         add_action('woocommerce_update_options_payment_gateways_' . $this->id, array($this, 'process_admin_options'));
+        add_action('wp_ajax_por_update_order_status', 'por_update_order_status');
+        add_action('wp_ajax_nopriv_por_update_order_status', 'por_update_order_status');
     }
 
     public function init_form_fields() {
@@ -137,7 +139,6 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
         <?php
     }
     
-
     public function validate_fields() {
         $qr_code_enabled = $this->get_option('enable_qr_code') === 'yes';
         $email_enabled = $this->get_option('enable_email') === 'yes';
@@ -151,87 +152,141 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
         }
         return true;
     }
+
+    function por_update_order_status() {
+        if (!isset($_POST['order_id'])) {
+            wp_send_json_error(array('message' => 'Invalid order ID.'));
+        }
     
+        $order_id = intval($_POST['order_id']);
+        $order = wc_get_order($order_id);
+    
+        if (!$order) {
+            wp_send_json_error(array('message' => 'Order not found.'));
+        }
+    
+        $order->update_status('on-hold', __('Payment confirmed by user.', 'por-payment-gateway'));
+        wp_send_json_success(array('redirect_url' => $order->get_checkout_order_received_url()));
+    }
 
     public function process_payment($order_id) {
         $order = wc_get_order($order_id);
     
-        // Retrieve the access token.
         try {
+            // Initiate the payment and generate access token
             $access_token = $this->get_access_token();
-        } catch (Exception $e) {
-            wc_add_notice('Payment failed: ' . $e->getMessage(), 'error');
-            return;
-        }
     
-        // Prepare data for the final API call.
-        $data = array(
-            'email' => $order->get_billing_email(),
-            'amount' => (string) $order->get_total(), // Ensure amount is a string
-            'name' => $order->get_billing_first_name() . '-' . $order->get_id(),
-            'phoneNumber' => $order->get_billing_phone(), // Use phone from billing details
-            'phoneNumberCheck' => isset($_POST['por_phone_number_check']) && $_POST['por_phone_number_check'] === 'on',
-            'emailOptionCheck' => isset($_POST['por_email']) && $_POST['por_email'] === 'on',
-        );
+            $data = [
+                'email' => $order->get_billing_email(),
+                'amount' => (string) $order->get_total(),
+                'name' => $order->get_billing_first_name() . '-' . $order->get_id(),
+                'phoneNumber' => $order->get_billing_phone(),
+                'phoneNumberCheck' => isset($_POST['por_phone_number_check']) && $_POST['por_phone_number_check'] === 'on',
+                'emailOptionCheck' => isset($_POST['por_email']) && $_POST['por_email'] === 'on',
+            ];
     
-        // Make the final payment API call.
-        $response = wp_remote_post('https://dev-api.payonramp.io/interac/initiate-deposit', array(
-            'method' => 'POST',
-            'headers' => array(
-                'Authorization' => 'Bearer ' . $access_token,
-                'Content-Type' => 'application/json',
-                
-            ),
-            'body' => json_encode($data),
-            'timeout' => 30,
-        ));
+            $response = wp_remote_post('https://dev-api.payonramp.io/interac/initiate-deposit', [
+                'method' => 'POST',
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $access_token,
+                    'Content-Type' => 'application/json',
+                ],
+                'body' => json_encode($data),
+                'timeout' => 30,
+            ]);
     
-        if (is_wp_error($response)) {
-            error_log('API Error: ' . $response->get_error_message());
-            error_log('Request Data: ' . print_r($data, true));
-            wc_add_notice('Payment failed: ' . $response->get_error_message(), 'error');
-            return;
-        }
-
-         error_log('API Response: ' . print_r($response, true));
-
-        $response_body = json_decode(wp_remote_retrieve_body($response), true);
-    
-        if (!$response_body['error'] && isset($response_body['response']['Message'])) {
-            // Render QR code if selected.
-            if (isset($_POST['por_qr_code']) && $_POST['por_qr_code'] === 'on') {
-                wc_add_notice('Scan the QR code below to complete your payment.', 'notice');
-                wc_add_notice('<img src="' . esc_url($response_body['image']) . '" alt="QR Code" style="max-width:200px; margin-top:10px;">', 'notice');
+            if (is_wp_error($response)) {
+                throw new Exception('Error initiating payment: ' . $response->get_error_message());
             }
     
-            // Show messages for email or phone link.
-            if (isset($_POST['por_email']) && $_POST['por_email'] === 'on') {
-                wc_add_notice('A payment link has been sent to your email. Please complete it to finish your order.', 'notice');
+            $response_body = json_decode(wp_remote_retrieve_body($response), true);
+    
+            if ($response_body['error'] ?? true) {
+                throw new Exception($response_body['message'] ?? 'Unknown error occurred.');
             }
     
-            if (isset($_POST['por_phone_number_check']) && $_POST['por_phone_number_check'] === 'on') {
-                if (!$response_body['phone']['error']) {
-                    wc_add_notice('A payment link has been sent to your phone number. Please complete it to finish your order.', 'notice');
-                } else {
-                    wc_add_notice('Unable to send payment link to your phone: ' . $response_body['phone']['message'], 'error');
-                }
-            }
+            // Add order note and set status to pending
+            $order->update_status('pending', __('Payment initiated. Awaiting user confirmation.', 'por-payment-gateway'));
+            $order->add_order_note(__('Payment link sent or QR code displayed. Awaiting user confirmation.', 'por-payment-gateway'));
     
-            // Update the order note for admin reference.
-            $order->add_order_note('Transaction initiated. Reference Number: ' . $response_body['response']['ReferenceNumber']);
-    
-            // Temporarily set the order status to "on-hold".
-            $order->update_status('on-hold', __('Awaiting payment confirmation.', 'woocommerce'));
-    
-            return array(
+            // Return WooCommerce success response
+            return [
                 'result' => 'success',
-                'redirect' => $this->get_return_url($order),
-            );
-        } else {
-            wc_add_notice('Payment failed: ' . $response_body['message'], 'error');
-            return;
+                'modal' => true, // Trigger modal
+                'data' => [
+                    'qr_code' => $response_body['image'] ?? '',
+                    'payment_link' => $response_body['link'] ?? '',
+                    'email' => isset($data['email']),
+                    'phone' => isset($data['phoneNumber']),
+                ],
+            ];
+        } catch (Exception $e) {
+            wc_add_notice(__('Payment failed: ', 'por-payment-gateway') . $e->getMessage(), 'error');
+    
+            return ['result' => 'failure']; // Failure response
         }
     }
+    
+
+    // public function process_payment($order_id) {
+    //     $order = wc_get_order($order_id);
+    
+    //     // Retrieve the access token
+    //     try {
+    //         $access_token = $this->get_access_token();
+    //     } catch (Exception $e) {
+    //         wc_add_notice('Payment failed: ' . $e->getMessage(), 'error');
+    //         return;
+    //     }
+    
+    //     // Prepare data for the API call
+    //     $data = array(
+    //         'email' => $order->get_billing_email(),
+    //         'amount' => (string) $order->get_total(),
+    //         'name' => $order->get_billing_first_name() . '-' . $order->get_id(),
+    //         'phoneNumber' => $order->get_billing_phone(),
+    //         'phoneNumberCheck' => isset($_POST['por_phone_number_check']) && $_POST['por_phone_number_check'] === 'on',
+    //         'emailOptionCheck' => isset($_POST['por_email']) && $_POST['por_email'] === 'on',
+    //     );
+    
+    //     // Make the API call
+    //     $response = wp_remote_post('https://dev-api.payonramp.io/interac/initiate-deposit', array(
+    //         'method' => 'POST',
+    //         'headers' => array(
+    //             'Authorization' => 'Bearer ' . $access_token,
+    //             'Content-Type' => 'application/json',
+    //         ),
+    //         'body' => json_encode($data),
+    //         'timeout' => 30,
+    //     ));
+    
+    //     if (is_wp_error($response)) {
+    //         wc_add_notice('Payment failed: ' . $response->get_error_message(), 'error');
+    //         return;
+    //     }
+    
+    //     $response_body = json_decode(wp_remote_retrieve_body($response), true);
+    
+    //     if (!$response_body['error'] && isset($response_body['response']['Message'])) {
+    //         // Update the order status
+    //         $order->update_status('on-hold', __('Awaiting payment confirmation.', 'woocommerce'));
+    
+    //         // Return custom result to trigger modal
+    //         return array(
+    //             'result' => 'success',
+    //             'modal' => true,
+    //             'data' => array(
+    //                 'qr_code' => isset($response_body['image']) ? $response_body['image'] : '',
+    //                 'payment_link' => isset($response_body['link']) ? $response_body['link'] : '',
+    //                 'email' => isset($_POST['por_email']) && $_POST['por_email'] === 'on',
+    //                 'phone' => isset($_POST['por_phone_number_check']) && $_POST['por_phone_number_check'] === 'on',
+    //             ),
+    //         );
+    //     } else {
+    //         wc_add_notice('Payment failed: ' . $response_body['message'], 'error');
+    //         return;
+    //     }
+    // }
     
 
     private function get_access_token() {
