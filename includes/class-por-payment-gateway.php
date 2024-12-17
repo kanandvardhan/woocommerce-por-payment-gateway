@@ -27,6 +27,9 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
 
         // Hook for saving settings in the admin panel.
         add_action('woocommerce_update_options_payment_gateways_' . $this->id, [$this, 'process_admin_options']);
+        add_action('woocommerce_thankyou', [$this, 'display_payment_instructions'], 10, 1);
+        add_action('wp_ajax_por_update_order_status', [$this, 'handle_order_status_update']);
+        add_action('wp_ajax_nopriv_por_update_order_status', [$this, 'handle_order_status_update']);
 
     }
 
@@ -71,6 +74,13 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
                 'type'    => 'checkbox',
                 'label'   => __('Allow payment via Phone Number', 'por-payment-gateway'),
                 'default' => 'yes',
+            ],
+            'api_domain' => [
+            'title'       => __('API Domain', 'por-payment-gateway'),
+            'type'        => 'text',
+            'description' => __('Enter the API domain for PayOnRamp integration.', 'por-payment-gateway'),
+            'default'     => 'https://dev-api.payonramp.io',
+            'desc_tip'    => true,
             ],
             'email' => [
                 'title'       => __('Email', 'por-payment-gateway'),
@@ -141,6 +151,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
      */
     public function process_payment($order_id) {
         $order = wc_get_order($order_id);
+        $api_domain = $this->get_option('api_domain');
 
         try {
             // Generate access token and make API call.
@@ -154,7 +165,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
                 'emailOptionCheck' => isset($_POST['por_email']),
             ];
 
-            $response = wp_remote_post('https://dev-api.payonramp.io/interac/initiate-deposit', [
+            $response = wp_remote_post($api_domain . '/interac/initiate-deposit', [
                 'method'  => 'POST',
                 'headers' => [
                     'Authorization' => 'Bearer ' . $access_token,
@@ -178,12 +189,17 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
             $order->update_meta_data('_qr_code', $response_body['image'] ?? '');
             $order->update_meta_data('_payment_link', $response_body['link'] ?? '');
             $order->update_meta_data('_payment_email_success', $response_body['email'] ?? false);
-            $order->update_meta_data('_payment_phone_success', !$response_body['phone']['error']);
+            $order->update_meta_data('_payment_phone_success', $response_body['phone'] || !$response_body['phone']['error']);
             $order->save();
+            error_log('response_body-email: ' . $response_body['email'] ?? false);
+            error_log('response_body-phone: ' . $response_body['phone'] || !$response_body['phone']['error']);
 
             // Set order status.
             $order->update_status('pending', __('Payment initiated. Awaiting user confirmation.', 'por-payment-gateway'));
 
+            // Add order note.
+            $order->add_order_note(__('Payment initiated by the user using PayOnRamp Payment Gateway', 'por-payment-gateway'));
+            
             return [
                 'result'   => 'success',
                 'redirect' => $this->get_return_url($order) . '&payment_status=awaiting_payment',
@@ -195,6 +211,126 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
         }
     }
     
+    /**
+     * Display payment instructions on the "Thank You" page.
+     */
+    public function display_payment_instructions($order_id) {
+        $order = wc_get_order($order_id);
+
+        if (!$order) {
+            return; // Order doesn't exist.
+        }
+
+        // Check if the payment status is awaiting payment.
+        if (!isset($_GET['payment_status']) || $_GET['payment_status'] !== 'awaiting_payment') {
+            return;
+        }
+
+        // Start WooCommerce wrapper
+        echo '<div class="woocommerce-order" style="max-width: 600px; margin: 3rem 0;">';
+        echo '<h2 class="woocommerce-order-details__title">' . __('Complete Your Payment', 'por-payment-gateway') . '</h2>';
+
+        // Retrieve and display QR code
+        $qr_code = $order->get_meta('_qr_code');
+        if ($qr_code) {
+            if (strpos($qr_code, 'data:image') === 0) {
+                echo '<p>' . __('Scan the QR code below to complete your payment:', 'por-payment-gateway') . '</p>';
+                echo '<img src="' . esc_attr($qr_code) . '" alt="QR Code" style="max-width:200px; margin:10px auto; display:block;">';
+            } else {
+                echo '<p>' . __('Scan the QR code below to complete your payment:', 'por-payment-gateway') . '</p>';
+                echo '<img src="' . esc_url($qr_code) . '" alt="QR Code" style="max-width:200px; margin:10px auto; display:block;">';
+            }
+        } else {
+            echo '<p>' . __('QR Code could not be retrieved. Please contact support.', 'por-payment-gateway') . '</p>';
+        }
+
+        echo '<p style="text-align: center;">' . __('OR', 'por-payment-gateway') . '</p>';
+
+        // Display payment link
+        $payment_link = $order->get_meta('_payment_link');
+        if ($payment_link) {
+            echo '<div class="woocommerce-notice woocommerce-notice--info">';
+            echo '<p style="text-align: center;"><a href="' . esc_url($payment_link) . '" target="_blank" class="button">' . __('Click here to complete your payment', 'por-payment-gateway') . '</a></p>';
+            echo '</div>';
+        }
+
+        // Dynamic messages
+        $email_success = $order->get_meta('_payment_email_success');
+        $phone_success = $order->get_meta('_payment_phone_success');
+
+        if ($email_success && $phone_success) {
+            echo '<li class="woocommerce-notice woocommerce-notice--info">' . __('A payment link has been sent to your email and phone number. Please complete the payment to finish your order.', 'por-payment-gateway') . '</li>';
+        } elseif ($email_success) {
+            echo '<li class="woocommerce-notice woocommerce-notice--info">' . __('A payment link has been sent to your email. Please complete the payment to finish your order.', 'por-payment-gateway') . '</li>';
+        } elseif ($phone_success) {
+            echo '<li class="woocommerce-notice woocommerce-notice--info">' . __('A payment link has been sent to your phone number. Please complete the payment to finish your order.', 'por-payment-gateway') . '</li>';
+        }
+
+        echo '<li>' . __('Once the payment is complete, click the button below to confirm.', 'por-payment-gateway') . '</li>';
+
+        // Confirmation button
+        echo '<div class="form-row form-row-wide" style="text-align: center; margin-top: 20px;">';
+        echo '<button id="por-payment-confirm-btn" class="button alt">' . __('I have completed the payment', 'por-payment-gateway') . '</button>';
+        echo '</div>';
+
+        // JavaScript for AJAX functionality
+        ?>
+        <script>
+        jQuery(function ($) {
+            $('#por-payment-confirm-btn').on('click', function () {
+                var button = $(this);
+                button.prop('disabled', true).text('<?php echo esc_js(__('Processing...', 'por-payment-gateway')); ?>');
+
+                $.ajax({
+                    url: '<?php echo esc_url(admin_url('admin-ajax.php')); ?>',
+                    method: 'POST',
+                    data: {
+                        action: 'por_update_order_status',
+                        order_id: '<?php echo esc_js($order_id); ?>',
+                    },
+                    success: function (response) {
+                        if (response.success) {
+                            alert('<?php echo esc_js(__('Your payment will be confirmed by our team. Thank you!', 'por-payment-gateway')); ?>');
+                            button.prop('disabled', true).text('<?php echo esc_js(__('Please ignore if already paid.', 'por-payment-gateway')); ?>');
+                        } else {
+                            alert('<?php echo esc_js(__('Failed to confirm payment. Please try again.', 'por-payment-gateway')); ?>');
+                            button.prop('disabled', false).text('<?php echo esc_js(__('I have completed the payment', 'por-payment-gateway')); ?>');
+                        }
+                    },
+                    error: function () {
+                        alert('<?php echo esc_js(__('An error occurred. Please try again.', 'por-payment-gateway')); ?>');
+                        button.prop('disabled', false).text('<?php echo esc_js(__('I have completed the payment', 'por-payment-gateway')); ?>');
+                    }
+                });
+            });
+        });
+        </script>
+        <?php
+
+        echo '</div>'; // End WooCommerce wrapper
+    }
+
+    /**
+     * Handle AJAX request to update the order status.
+     */
+    public function handle_order_status_update() {
+        if (!isset($_POST['order_id'])) {
+            wp_send_json_error(['message' => __('Invalid order ID.', 'por-payment-gateway')]);
+        }
+
+        $order_id = intval($_POST['order_id']);
+        $order = wc_get_order($order_id);
+
+        if (!$order) {
+            wp_send_json_error(['message' => __('Order not found.', 'por-payment-gateway')]);
+        }
+
+        // Update order status and add note
+        $order->update_status('on-hold', __('Payment confirmed by the user.', 'por-payment-gateway'));
+        $order->add_order_note(__('Payment manually confirmed by the user via "I have completed the payment" button.', 'por-payment-gateway'));
+
+        wp_send_json_success();
+    }
 
     /**
      * Retrieve access token for API.
@@ -203,6 +339,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
         $email = $this->get_option('email');
         $app_id = $this->get_option('app_id');
         $secret = $this->get_option('secret');
+        $api_domain = $this->get_option('api_domain');
 
         if (!$email || !$app_id || !$secret) {
             throw new Exception(__('Missing API credentials.', 'por-payment-gateway'));
@@ -216,7 +353,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
         $encrypted_data = openssl_encrypt($data_to_encrypt, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv);
         $hash = bin2hex($iv) . ':' . bin2hex($encrypted_data);
 
-        $response = wp_remote_post('https://dev-api.payonramp.io/merchantlogin/interac/login', [
+        $response = wp_remote_post($api_domain .'/merchantlogin/interac/login', [
             'method'  => 'POST',
             'headers' => [
                 'email' => $email,
