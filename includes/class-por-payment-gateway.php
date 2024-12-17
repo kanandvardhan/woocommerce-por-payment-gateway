@@ -29,6 +29,10 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
         // Hook for saving settings in the admin panel.
         add_action('woocommerce_update_options_payment_gateways_' . $this->id, [$this, 'process_admin_options']);
         add_action('woocommerce_admin_order_data_after_order_details', [$this, 'display_reference_number_in_admin']);
+
+        // Webhhook for updating order status
+        // add_action('rest_api_init', [$this, 'update_order_status_webhook_endpoint']);
+
         // add_action('wp_ajax_por_resend_payment_link', [$this, 'resend_payment_link']);
         // add_action('wp_ajax_nopriv_por_resend_payment_link', [$this, 'resend_payment_link']);
 
@@ -80,12 +84,19 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
                 'label'   => __('Allow payment via Phone Number', 'por-payment-gateway'),
                 'default' => 'yes',
             ],
+            'default_order_status' => array(
+                'title' => __( 'Order Status After The Checkout', 'por-payment-gateway' ),
+                'type' => 'select',
+                'options' => wc_get_order_statuses(),
+                'default' => 'wc-processing',
+                'description' 	=> __( 'The default order status if this gateway used in payment.', 'por-payment-gateway' ),
+            ),
             'api_domain' => [
-            'title'       => __('API Domain', 'por-payment-gateway'),
-            'type'        => 'text',
-            'description' => __('Enter the API domain for PayOnRamp integration.', 'por-payment-gateway'),
-            'default'     => 'https://dev-api.payonramp.io',
-            'desc_tip'    => true,
+                'title'       => __('API Domain', 'por-payment-gateway'),
+                'type'        => 'text',
+                'description' => __('Enter the API domain for PayOnRamp integration.', 'por-payment-gateway'),
+                'default'     => 'https://dev-api.payonramp.io',
+                'desc_tip'    => true,
             ],
             'email' => [
                 'title'       => __('Email', 'por-payment-gateway'),
@@ -103,7 +114,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
             ],
             'secret' => [
                 'title'       => __('Secret', 'por-payment-gateway'),
-                'type'        => 'password',
+                'type'        => 'text',
                 'description' => __('Enter the secret for the API.', 'por-payment-gateway'),
                 'default'     => '',
                 'desc_tip'    => true,
@@ -544,6 +555,72 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
         }
 
         return $body['data']['accessToken'];
+    }
+
+    /**
+     * Register the webhook endpoint with WordPress REST API.
+     */
+    public function update_order_status_webhook_endpoint() {
+        register_rest_route('por-payment/v1', '/webhook', [
+            'methods'  => 'POST',
+            'callback' => [$this, 'handle_webhook_request'],
+            'permission_callback' => '__return_true', // Allow public access (validate manually)
+        ]);
+    }
+
+    /**
+     * Handle incoming webhook requests.
+     *
+     * @param WP_REST_Request $request The request object containing webhook payload.
+     * @return WP_REST_Response
+     */
+    public function handle_webhook_request(WP_REST_Request $request) {
+        // Extract data from the webhook payload
+        $data = $request->get_json_params();
+        $default_order_status = $this->get_option('default_order_status');
+        $reference_number = sanitize_text_field($data['referenceNumber'] ?? '');
+        $status = sanitize_text_field($data['status'] ?? '');
+
+        // Log the request for debugging
+        error_log('Webhook Received: ' . print_r($data, true));
+
+        // Validate required data
+        if (empty($reference_number) || empty($status)) {
+            return new WP_REST_Response(['message' => 'Invalid payload.'], 400);
+        }
+
+        // Find the WooCommerce order by reference number
+        $orders = wc_get_orders([
+            'meta_key'   => '_reference_number',
+            'meta_value' => $reference_number,
+            'limit'      => 1,
+        ]);
+
+        if (empty($orders)) {
+            return new WP_REST_Response([
+                'message' => 'Order not found.'], 404);
+        }
+
+        $order = current($orders);
+
+        try {
+            // Update the order status based on the webhook status
+            if ($status === 'completed') {
+                $order->payment_complete(); // Marks order as paid
+                $order->update_status($default_order_status, __('Payment completed via webhook.', 'por-payment-gateway'));
+            } elseif ($status === 'failed') {
+                $order->update_status('failed', __('Payment failed via webhook.', 'por-payment-gateway'));
+            } else {
+                $order->add_order_note(__('Webhook received an unrecognized status: ' . $status, 'por-payment-gateway'));
+            }
+
+            $order->save();
+
+            return new WP_REST_Response(['message' => 'Order updated successfully.'], 200);
+
+        } catch (Exception $e) {
+            return new WP_REST_Response(['message' => 'Error: ' . $e->getMessage()], 500);
+        }
     }
 
     

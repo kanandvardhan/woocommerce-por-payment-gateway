@@ -44,6 +44,7 @@ add_filter('plugin_action_links_' . plugin_basename(__FILE__), 'por_payment_gate
 add_action('wp_ajax_por_update_order_status', 'por_update_order_status');
 add_action('wp_ajax_nopriv_por_update_order_status', 'por_update_order_status');
 add_action('woocommerce_thankyou', 'display_payment_instructions', 10, 1);
+add_action('rest_api_init', 'update_order_status_webhook_endpoint');
 
 /**
  * Initialize the payment gateway.
@@ -254,24 +255,114 @@ function display_payment_instructions($order_id) {
     echo '</div>'; // End WooCommerce wrapper
 }
 
-/**
- * Handle AJAX request to update the order status.
- */
-function por_update_order_status() {
-    if (!isset($_POST['order_id'])) {
-        wp_send_json_error(['message' => __('Invalid order ID.', 'por-payment-gateway')]);
+    /**
+     * Handle AJAX request to update the order status.
+     */
+    function por_update_order_status() {
+        if (!isset($_POST['order_id'])) {
+            wp_send_json_error(['message' => __('Invalid order ID.', 'por-payment-gateway')]);
+        }
+
+        $order_id = intval($_POST['order_id']);
+        $order = wc_get_order($order_id);
+
+        if (!$order) {
+            wp_send_json_error(['message' => __('Order not found.', 'por-payment-gateway')]);
+        }
+
+        // Update order status and add note
+        $order->update_status('on-hold', __('Payment confirmed by the user.', 'por-payment-gateway'));
+        $order->add_order_note(__('Payment manually confirmed by the user via "I have completed the payment" button.', 'por-payment-gateway'));
+
+        wp_send_json_success();
     }
 
-    $order_id = intval($_POST['order_id']);
-    $order = wc_get_order($order_id);
 
-    if (!$order) {
-        wp_send_json_error(['message' => __('Order not found.', 'por-payment-gateway')]);
+   /**
+     * Register the webhook endpoint with WordPress REST API.
+     */
+    function update_order_status_webhook_endpoint() {
+        register_rest_route('por-payment/v1', '/webhook', [
+            'methods'  => 'POST',
+            'callback' => 'handle_webhook_request',
+            'permission_callback' => '__return_true', // Allow public access (validate manually)
+        ]);
     }
 
-    // Update order status and add note
-    $order->update_status('on-hold', __('Payment confirmed by the user.', 'por-payment-gateway'));
-    $order->add_order_note(__('Payment manually confirmed by the user via "I have completed the payment" button.', 'por-payment-gateway'));
+      /**
+         * Handle incoming webhook requests.
+         *
+         * @param WP_REST_Request $request The request object containing webhook payload.
+         * @return WP_REST_Response
+         */
+        function handle_webhook_request(WP_REST_Request $request) {
+        $gateway_settings = get_option('woocommerce_por_gateway_settings');
+        $api_secret = isset($gateway_settings['secret']) ? $gateway_settings['secret'] : '';
+        $default_order_status = isset($gateway_settings['default_order_status']) ? $gateway_settings['default_order_status'] : '';
+        // Extract data from the webhook payload
+        $data = $request->get_json_params();
+        $reference_number = sanitize_text_field($data['referenceNumber'] ?? '');
+        $status = sanitize_text_field($data['status'] ?? ''); // e.g., "completed", "failed"
+        $signature  = $request->get_header('x-signature');
 
-    wp_send_json_success();
-}
+        error_log('api_secret: ' . print_r($api_secret, true));
+        error_log('signature: ' . print_r($signature, true));
+        error_log('default_order_status: ' . print_r($default_order_status, true));
+
+
+        // Validate the signature
+        $expected_signature = hash_hmac('sha256', json_encode($data), $api_secret);
+        if ($signature !== $expected_signature) {
+            return new WP_REST_Response([
+                'error' => true,
+                'message' => 'Invalid signature.'], 403);
+        }
+
+        // Log the request for debugging
+        error_log('Webhook Received: ' . print_r($data, true));
+
+        // Validate required data
+        if (empty($reference_number) || empty($status)) {
+            return new WP_REST_Response([
+                'error' => true,
+                'message' => 'Invalid payload.'], 400);
+        }
+
+        // Find the WooCommerce order by reference number
+        $orders = wc_get_orders([
+            'meta_key'   => '_reference_number',
+            'meta_value' => $reference_number,
+            'limit'      => 1,
+        ]);
+
+        if (empty($orders)) {
+            return new WP_REST_Response([
+                'error' => true,
+                'message' => 'Order not found.'], 404);
+        }
+
+        $order = current($orders);
+
+        try {
+            // Update the order status based on the webhook status
+            if ($status === 'completed') {
+                $order->payment_complete(); // Marks order as paid
+                $order->update_status($default_order_status, __('Payment completed via webhook.', 'por-payment-gateway'));
+            } elseif ($status === 'failed') {
+                $order->update_status('failed', __('Payment failed via webhook.', 'por-payment-gateway'));
+            } else {
+                $order->add_order_note(__('Webhook received an unrecognized status: ' . $status, 'por-payment-gateway'));
+            }
+
+            $order->save();
+
+            return new WP_REST_Response([
+                'error' => false,
+                'message' => 'Order updated successfully.'], 200);
+
+        } catch (Exception $e) {
+            return new WP_REST_Response([
+                'error' => true,
+                'message' => 'Error: ' . $e->getMessage()], 500);
+        }
+    }
