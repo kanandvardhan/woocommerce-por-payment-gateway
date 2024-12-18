@@ -99,7 +99,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
                 'desc_tip'    => true,
             ],
             'email' => [
-                'title'       => __('Email', 'por-payment-gateway'),
+                'title'       => __('Application Email', 'por-payment-gateway'),
                 'type'        => 'text',
                 'description' => __('Enter the email to authenticate the API.', 'por-payment-gateway'),
                 'default'     => '',
@@ -112,10 +112,17 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
                 'default'     => '',
                 'desc_tip'    => true,
             ],
-            'secret' => [
-                'title'       => __('Secret', 'por-payment-gateway'),
+            'app_secret' => [
+                'title'       => __('Application Secret', 'por-payment-gateway'),
                 'type'        => 'text',
                 'description' => __('Enter the secret for the API.', 'por-payment-gateway'),
+                'default'     => '',
+                'desc_tip'    => true,
+            ],
+            'webhook_secret' => [
+                'title'       => __('Webhook Secret', 'por-payment-gateway'),
+                'type'        => 'text',
+                'description' => __('Enter the secret for the webhook used for payment status updates.', 'por-payment-gateway'),
                 'default'     => '',
                 'desc_tip'    => true,
             ],
@@ -521,16 +528,16 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
     private function get_access_token() {
         $email = $this->get_option('email');
         $app_id = $this->get_option('app_id');
-        $secret = $this->get_option('secret');
+        $app_secret = $this->get_option('app_secret');
         $api_domain = $this->get_option('api_domain');
 
-        if (!$email || !$app_id || !$secret) {
+        if (!$email || !$app_id || !$app_secret) {
             throw new Exception(__('Missing API credentials.', 'por-payment-gateway'));
         }
 
         $timestamp = round(microtime(true) * 1000);
         $data_to_encrypt = $app_id . ':' . $timestamp;
-        $key = hash('sha256', $secret, true);
+        $key = hash('sha256', $app_secret, true);
         $iv = random_bytes(16);
 
         $encrypted_data = openssl_encrypt($data_to_encrypt, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv);
