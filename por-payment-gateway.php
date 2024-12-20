@@ -195,7 +195,7 @@ function display_payment_instructions($order_id) {
                 url: '<?php echo esc_url(admin_url('admin-ajax.php')); ?>',
                 method: 'POST',
                 data: {
-                    action: 'resend_payment_link',
+                    action: 'por_resend_payment_link',
                     order_id: '<?php echo esc_js($order_id); ?>',
                 },
                 success: function (response) {
@@ -231,39 +231,32 @@ function display_payment_instructions($order_id) {
     ?>
     <script>
     jQuery(function ($) {
-        $('#por-resend-payment-link').on('click', function (e) {
-        e.preventDefault();
-        var link = $(this);
-        var order_id = link.data('order-id');
+        $('#por-payment-confirm-btn').on('click', function () {
+            var button = $(this);
+            button.prop('disabled', true).text('<?php echo esc_js(__('Processing...', 'por-payment-gateway')); ?>');
 
-        if (link.hasClass('disabled')) {
-            return;
-        }
-
-        link.text('<?php echo esc_js(__(' sending... ', 'por-payment-gateway')); ?>');
-
-        $.ajax({
-            url: '<?php echo esc_url(admin_url('admin-ajax.php')); ?>',
-            type: 'POST',
-            data: {
+            $.ajax({
+                url: '<?php echo esc_url(admin_url('admin-ajax.php')); ?>',
+                method: 'POST',
+                data: {
                     action: 'por_update_order_status',
                     order_id: '<?php echo esc_js($order_id); ?>',
                 },
-            success: function (response) {
-                if (response.success) {
-                    alert(response.data.message);
-                } else {
-                    alert(response.data.message); // Display the error message from PHP
+                success: function (response) {
+                    if (response.success) {
+                        alert('<?php echo esc_js(__('Your payment will be confirmed by our team. Thank you!', 'por-payment-gateway')); ?>');
+                        button.prop('disabled', true).text('<?php echo esc_js(__('Please ignore if already paid.', 'por-payment-gateway')); ?>');
+                    } else {
+                        alert('<?php echo esc_js(__('Failed to confirm payment. Please try again.', 'por-payment-gateway')); ?>');
+                        button.prop('disabled', false).text('<?php echo esc_js(__('I have completed the payment', 'por-payment-gateway')); ?>');
+                    }
+                },
+                error: function () {
+                    alert('<?php echo esc_js(__('An error occurred. Please try again.', 'por-payment-gateway')); ?>');
+                    button.prop('disabled', false).text('<?php echo esc_js(__('I have completed the payment', 'por-payment-gateway')); ?>');
                 }
-                link.text('<?php echo esc_js(__('here', 'por-payment-gateway')); ?>');
-            },
-            error: function (jqXHR, textStatus, errorThrown) {
-                console.error("AJAX Error:", textStatus, errorThrown, jqXHR.responseText); // Log more details
-                alert('<?php echo esc_js(__('An error occurred. Please check the console.', 'por-payment-gateway')); ?>');
-                link.text('<?php echo esc_js(__('here', 'por-payment-gateway')); ?>');
-            }
+            });
         });
-    });
     });
     </script>
     <?php
