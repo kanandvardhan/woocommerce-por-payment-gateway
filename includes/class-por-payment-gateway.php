@@ -68,9 +68,11 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
             'type'    => 'checkbox',
             'label'   => __('Allow payment via QR Code', 'por-payment-gateway'),
             'default' => 'yes',
-            'custom_attributes' => [
-                'disabled' => 'disabled', 
-                ],
+            // 'required' => true
+
+            // 'custom_attributes' => [
+            //     'disabled' => 'disabled', 
+            //     ],
             ],
             'enable_email' => [
                 'title'   => __('Enable Email', 'por-payment-gateway'),
@@ -90,6 +92,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
                 'options' => wc_get_order_statuses(),
                 'default' => 'wc-processing',
                 'description' 	=> __( 'The default order status if this gateway used in payment.', 'por-payment-gateway' ),
+                // 'required' => true
             ),
             'api_domain' => [
                 'title'       => __('API Domain', 'por-payment-gateway'),
@@ -97,6 +100,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
                 'description' => __('Enter the API domain for PayOnRamp integration.', 'por-payment-gateway'),
                 'default'     => 'https://dev-api.payonramp.io',
                 'desc_tip'    => true,
+                // 'required' => true
             ],
             'email' => [
                 'title'       => __('Application Email', 'por-payment-gateway'),
@@ -104,6 +108,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
                 'description' => __('Enter the email to authenticate the API.', 'por-payment-gateway'),
                 'default'     => '',
                 'desc_tip'    => true,
+                // 'required' => true
             ],
             'app_id' => [
                 'title'       => __('Application ID', 'por-payment-gateway'),
@@ -111,6 +116,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
                 'description' => __('Enter the Application ID for the API.', 'por-payment-gateway'),
                 'default'     => '',
                 'desc_tip'    => true,
+                // 'required' => true
             ],
             'app_secret' => [
                 'title'       => __('Application Secret', 'por-payment-gateway'),
@@ -118,6 +124,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
                 'description' => __('Enter the secret for the API.', 'por-payment-gateway'),
                 'default'     => '',
                 'desc_tip'    => true,
+                // 'required' => true
             ],
             'webhook_secret' => [
                 'title'       => __('Webhook Secret', 'por-payment-gateway'),
@@ -125,6 +132,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
                 'description' => __('Enter the secret for the webhook used for payment status updates.', 'por-payment-gateway'),
                 'default'     => '',
                 'desc_tip'    => true,
+                // 'required' => true
             ],
         ];
     }
@@ -185,11 +193,11 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
         }
 
         if ($this->get_option('enable_email') === 'yes') {
-            echo '<p><input type="checkbox" id="por_email" name="por_email" checked> ' . __('Email', 'por-payment-gateway') . '</p>';
+            echo '<p><input type="checkbox" id="por_email" name="por_email"> ' . __('Email', 'por-payment-gateway') . '</p>';
         }
 
         if ($this->get_option('enable_phone') === 'yes') {
-            echo '<p><input type="checkbox" id="por_phone" name="por_phone" checked> ' . __('Phone Number', 'por-payment-gateway') . '</p>';
+            echo '<p><input type="checkbox" id="por_phone" name="por_phone" > ' . __('Phone Number', 'por-payment-gateway') . '</p>';
         }
 
         echo '</fieldset>';

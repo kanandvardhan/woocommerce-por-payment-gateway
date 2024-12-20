@@ -45,7 +45,6 @@ add_action('wp_ajax_por_update_order_status', 'por_update_order_status');
 add_action('wp_ajax_nopriv_por_update_order_status', 'por_update_order_status');
 add_action('woocommerce_thankyou', 'display_payment_instructions', 10, 1);
 add_action('rest_api_init', 'update_order_status_webhook_endpoint');
-register_activation_hook(__FILE__, 'por_activation_check');
 // add_action('wp_ajax_por_resend_payment_link', 'resend_payment_link');
 // add_action('wp_ajax_nopriv_por_resend_payment_link', 'resend_payment_link');
 
@@ -80,28 +79,6 @@ function por_display_admin_notice($message, $type = 'error') {
         $class = ($type === 'success') ? 'notice-success' : 'notice-error';
         printf('<div class="notice %s is-dismissible"><p>%s</p></div>', esc_attr($class), esc_html($message));
     });
-}
-
-function por_activation_check() {
-    $gateway_settings = get_option('woocommerce_por_gateway_settings');
-
-    $email = $gateway_settings['email'] ?? '';
-    $app_id = $gateway_settings['app_id'] ?? '';
-    $app_secret = $gateway_settings['app_secret'] ?? '';
-    $webhook_secret = $gateway_settings['webhook_secret'] ?? '';
-
-    if (empty($email) || empty($app_id) || empty($app_secret) || empty($webhook_secret)) {
-        // Settings are missing; display the setup notice
-        por_display_admin_notice(__('Please configure your PayOnRamp API credentials in the WooCommerce settings to activate the gateway.'), 'notice');
-    } else {
-      $payment_gateway = new WC_POR_Payment_Gateway();
-      try{
-        $payment_gateway->get_access_token();
-        por_display_admin_notice(__('PayOnRamp Payment Gateway activated Successfully.', 'success'));
-      }catch(Exception $e){
-        por_display_admin_notice(__('PayOnRamp Payment Gateway activated but API credentials are invalid. Please check your settings: ' . $e->getMessage()), 'error');
-      }
-    }
 }
 
 /**
