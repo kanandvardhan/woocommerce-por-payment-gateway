@@ -279,102 +279,142 @@ function display_payment_instructions($order_id) {
 
 
     /**
-         * Register the webhook endpoint with WordPress REST API.
-         */
-        function update_order_status_webhook_endpoint() {
-            register_rest_route('por-payment/v1', '/webhook', [
-                'methods'  => 'POST',
-                'callback' => 'handle_webhook_request',
-                'permission_callback' => '__return_true', // Allow public access (validate manually)
-            ]);
+     * Register the webhook endpoint with WordPress REST API.
+     */
+    function update_order_status_webhook_endpoint() {
+        register_rest_route('por-payment/v1', '/webhook', [
+            'methods'  => 'POST',
+            'callback' => 'handle_webhook_request',
+            'permission_callback' => '__return_true', // Allow public access (validate manually)
+        ]);
+    }
+
+    /**
+     * Handle incoming webhook requests.
+     *
+     * @param WP_REST_Request $request The request object containing webhook payload.
+     * @return WP_REST_Response
+     */
+    function handle_webhook_request(WP_REST_Request $request) {
+        $gateway_settings = get_option('woocommerce_por_gateway_settings');
+        $webhook_secret = isset($gateway_settings['webhook_secret']) ? $gateway_settings['webhook_secret'] : '';
+        $default_order_status = isset($gateway_settings['default_order_status']) ? $gateway_settings['default_order_status'] : '';
+
+        $data = $request->get_json_params();
+        $eventType = sanitize_text_field($data['eventType'] ?? '');
+        $payload = $data['payload'] ?? [];
+        $reference_number = sanitize_text_field($data['payload']['referenceNumber'] ?? '');
+        $status = sanitize_text_field($data['payload']['status'] ?? '');
+        $signature  = $request->get_header('X-Signature');
+
+        error_log('default_order_status: ' . $default_order_status);
+        error_log('eventType: ' . $eventType);
+        error_log('reference_number: ' . $reference_number);
+        error_log('status: ' . $status);
+        error_log('signature: ' . $signature);
+
+        // Get the raw body of the request
+        $raw_body = $request->get_body();
+        error_log('raw_body: ' . $raw_body);
+
+        // Validate the signature based on the raw body
+        $expected_signature = hash_hmac('sha256', $raw_body, $webhook_secret);
+        error_log('expected_signature: ' . $expected_signature);
+
+        if ($signature !== $expected_signature) {
+            return new WP_REST_Response([
+                'error' => true,
+                'message' => 'Invalid signature.'
+            ], 403);
         }
 
-      /**
-         * Handle incoming webhook requests.
-         *
-         * @param WP_REST_Request $request The request object containing webhook payload.
-         * @return WP_REST_Response
-         */
-        function handle_webhook_request(WP_REST_Request $request) {
-            $gateway_settings = get_option('woocommerce_por_gateway_settings');
-            $webhook_secret = isset($gateway_settings['webhook_secret']) ? $gateway_settings['webhook_secret'] : '';
-            $default_order_status = isset($gateway_settings['default_order_status']) ? $gateway_settings['default_order_status'] : '';
-        
-            $data = $request->get_json_params();
-            $eventType = sanitize_text_field($data['eventType'] ?? '');
-            $payload = $data['payload'] ?? [];
-            $reference_number = sanitize_text_field($data['payload']['referenceNumber'] ?? '');
-            $status = sanitize_text_field($data['payload']['status'] ?? '');
-            $signature  = $request->get_header('X-Signature');
+        // Log the request for debugging
+        error_log('Webhook Received: ' . print_r($data, true));
 
-            error_log('default_order_status: ' . $default_order_status);
-        
-            // Get the raw body of the request
-            $raw_body = $request->get_body();
-            error_log('raw_body: ' . $raw_body);
-        
-            // Validate the signature based on the raw body
-            $expected_signature = hash_hmac('sha256', $raw_body, $webhook_secret);
-        
-            if ($signature !== $expected_signature) {
-                return new WP_REST_Response([
-                    'error' => true,
-                    'message' => 'Invalid signature.'
-                ], 403);
-            }
-        
-            // Log the request for debugging
-            error_log('Webhook Received: ' . print_r($data, true));
-        
-            // Validate required data
-            if (empty($reference_number) || empty($status)) {
-                return new WP_REST_Response([
-                    'error' => true,
-                    'message' => 'Invalid payload.',
-                ], 400);
-            }
-        
-            // Find the WooCommerce order by reference number
-            $orders = wc_get_orders([
-                'meta_key'   => '_reference_number',
-                'meta_value' => $reference_number,
-                'limit'      => 1,
-            ]);
-        
-            if (empty($orders)) {
-                return new WP_REST_Response([
-                    'error' => true,
-                    'message' => 'Order not found.',
-                ], 404);
-            }
-        
-            $order = current($orders);
-        
-            try {
-                // Update the order status based on the webhook status
+        // Validate required data
+        if (empty($reference_number) || empty($status) || empty($eventType)) {
+            return new WP_REST_Response([
+                'error' => true,
+                'message' => 'Invalid payload. Missing reference number, status, or event type.',
+            ], 400);
+        }
+
+        // Check eventType before proceeding with order update
+        $valid_event_types = ['payment_success', 'payment_failure', 'payment_pending'];
+        if (!in_array($eventType, $valid_event_types)) {
+            return new WP_REST_Response([
+                'error' => true,
+                'message' => 'Invalid event type: ' . $eventType,
+            ], 400);
+        }
+
+        // Find the WooCommerce order by reference number
+        $orders = wc_get_orders([
+            'meta_key'   => '_reference_number',
+            'meta_value' => $reference_number,
+            'limit'      => 1,
+        ]);
+
+        if (empty($orders)) {
+            return new WP_REST_Response([
+                'error' => true,
+                'message' => 'Order not found.',
+            ], 404);
+        }
+
+        $order = current($orders);
+
+        try {
+            if ($eventType === 'payment_success') {
                 if (strcasecmp($status, 'APPROVED') === 0) {
-                    $order->payment_complete(); // Marks order as paid
+                    $order->payment_complete();
                     $order->update_status($default_order_status, __('Payment completed via webhook.', 'por-payment-gateway'));
-                } elseif (strcasecmp($status, 'PENDING') === 0) {
-                    $order->update_status('on_hold', __('Payment still in pending via webhook.', 'por-payment-gateway'));
-                } elseif (strcasecmp($status, 'REJECTED') === 0) {
-                    $order->update_status('on_hold', __('Payment failed via webhook.', 'por-payment-gateway'));
                 } else {
-                    $order->add_order_note(__('Webhook received an unrecognized status: ' . $status, 'por-payment-gateway'));
+                    $order->add_order_note(__('Webhook received an unrecognized status for payment_success event: ' . $status, 'por-payment-gateway'));
+                    error_log('Unrecognized webhook status for payment_success event: ' . $status);
+                    return new WP_REST_Response([
+                        'error' => true,
+                        'message' => 'Invalid status for payment_success event.',
+                    ], 500);
                 }
-        
-                $order->save();
-        
-                return new WP_REST_Response([
-                    'error' => false,
-                    'message' => 'Order updated successfully.',
-                ], 200);
-        
-            } catch (Exception $e) {
-                return new WP_REST_Response([
-                    'error' => true,
-                    'message' => 'Error: ' . $e->getMessage(),
-                ], 500);
+            } elseif ($eventType === 'payment_pending') {
+                if (strcasecmp($status, 'PENDING') === 0) {
+                    $order->update_status('pending', __('Payment is pending via webhook.', 'por-payment-gateway'));
+                } else {
+                    $order->add_order_note(__('Webhook received an unrecognized status for payment_pending event: ' . $status, 'por-payment-gateway'));
+                    error_log('Unrecognized webhook status for payment_pending event: ' . $status);
+                    return new WP_REST_Response([
+                        'error' => true,
+                        'message' => 'Invalid status for payment_pending event.',
+                    ], 500);
+                }
+            } elseif ($eventType === 'payment_failure') {
+                if (strcasecmp($status, 'REJECTED') === 0) {
+                    $order->update_status('failed', __('Payment failed via webhook.', 'por-payment-gateway'));
+                } else {
+                    $order->add_order_note(__('Webhook received an unrecognized status for payment_failure event: ' . $status, 'por-payment-gateway'));
+                    error_log('Unrecognized webhook status for payment_failure event: ' . $status);
+                    return new WP_REST_Response([
+                        'error' => true,
+                        'message' => 'Invalid status for payment_failure event.',
+                    ], 500);
+                }
             }
+            $order->save(); // Save the order only ONCE after status updates.
+
+            $response = [
+                'error' => false,
+                'message' => 'Order updated successfully.',
+            ];
+            error_log('Response Data: ' . print_r($response, true));
+            return new WP_REST_Response($response, 200);
+
+        } catch (Exception $e) {
+            $errorResponse = [
+                'error' => true,
+                'message' => 'Error: ' . $e->getMessage(),
+            ];
+            error_log('Error Response: ' . print_r($errorResponse, true));
+            return new WP_REST_Response($errorResponse, 500);
         }
-    
+    }

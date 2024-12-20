@@ -146,7 +146,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
         }
 
         if ($this->get_option('enable_phone') === 'yes') {
-            echo '<p><input type="checkbox" id="por_phone" name="por_phone"> ' . __('Phone Number', 'por-payment-gateway') . '</p>';
+            echo '<p><input type="checkbox" id="por_phone" name="por_phone" checked> ' . __('Phone Number', 'por-payment-gateway') . '</p>';
         }
 
         echo '</fieldset>';
