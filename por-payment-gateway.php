@@ -1,6 +1,6 @@
 <?php
 /*
- * Plugin Name: POR Payment Gateway
+ * Plugin Name: PayOnRamp Payment Gateway
  * Plugin URI: https://payonramp.io
  * Description: A custom payment gateway for WooCommerce by PayOnRamp.
  * Author: PayOnRamp
@@ -406,7 +406,7 @@ function display_payment_instructions($order_id) {
         try {
             if ($eventType === 'payment_success') {
                 if (strcasecmp($status, 'APPROVED') === 0) {
-                    $order->payment_complete();
+                    // $order->payment_complete();
                     $order->update_status($default_order_status, __('Payment completed via webhook.', 'por-payment-gateway'));
                 } else {
                     $order->add_order_note(__('Webhook received an unrecognized status for payment_success event: ' . $status, 'por-payment-gateway'));

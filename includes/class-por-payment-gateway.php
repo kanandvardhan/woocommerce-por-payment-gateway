@@ -86,7 +86,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
                 'default' => 'yes',
             ],
             'default_order_status' => array(
-                'title' => __( 'Order Status After The Checkout', 'por-payment-gateway' ),
+                'title' => __( 'Order Status After Successful Payment', 'por-payment-gateway' ),
                 'type' => 'select',
                 'options' => wc_get_order_statuses(),
                 'default' => 'wc-processing',
