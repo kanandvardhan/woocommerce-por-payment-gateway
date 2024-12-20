@@ -68,8 +68,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
             'type'    => 'checkbox',
             'label'   => __('Allow payment via QR Code', 'por-payment-gateway'),
             'default' => 'yes',
-            // 'required' => true
-
+            'required' => true,
             // 'custom_attributes' => [
             //     'disabled' => 'disabled', 
             //     ],
@@ -138,48 +137,61 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
     }
 
     public function process_admin_options() {
-        // 1. Get the posted values FIRST
+        // Get posted values first
         $posted_values = [];
         foreach ($this->form_fields as $key => $field) {
             $posted_values[$key] = isset($_POST['woocommerce_por_gateway_' . $key]) ? wc_clean($_POST['woocommerce_por_gateway_' . $key]) : '';
         }
     
-        // 2. Perform validation using the POSTED values
+        // Validate required fields
+        $api_domain = $posted_values['api_domain'];
         $email = $posted_values['email'];
         $app_id = $posted_values['app_id'];
         $app_secret = $posted_values['app_secret'];
         $webhook_secret = $posted_values['webhook_secret'];
     
-        if (empty($email) || empty($app_id) || empty($app_secret) || empty($webhook_secret)) {
-            por_display_admin_notice(__('Please fill in all required API credentials (Email, Application ID, Application Secret, and Webhook Secret).'), 'error');
+        if (empty($api_domain) || empty($email) || empty($app_id) || empty($app_secret) || empty($webhook_secret)) {
+            por_display_admin_notice('Please fill in all required API credentials (API Domain, Email, Application ID, Application Secret, and Webhook Secret).', 'error');
+            return false; // Prevent saving settings
+        }
+
+        // Ensure at least one payment method is enabled
+        $enable_qr_code = !empty($posted_values['enable_qr_code']);
+        $enable_email = !empty($posted_values['enable_email']);
+        $enable_phone = !empty($posted_values['enable_phone']);
+
+        if (!$enable_qr_code && !$enable_email && !$enable_phone) {
+            por_display_admin_notice('At least one payment method (QR Code, Email, or Phone) must be enabled.', 'error');
             return false; // Prevent saving settings
         }
     
         try {
-            // Instantiate the gateway class to use get_access_token
-            $payment_gateway = new WC_POR_Payment_Gateway();
+            // Temporarily set instance variables for token validation
+            $this->settings['api_domain'] = $api_domain;
+            $this->settings['email'] = $email;
+            $this->settings['app_id'] = $app_id;
+            $this->settings['app_secret'] = $app_secret;
     
-            // TEMPORARILY set the options within the INSTANCE for get_access_token()
-            $payment_gateway->settings['email'] = $email;
-            $payment_gateway->settings['app_id'] = $app_id;
-            $payment_gateway->settings['app_secret'] = $app_secret;
+            // Attempt to get access token
+            $this->get_access_token();
     
-            $payment_gateway->get_access_token(); // Attempt to get the token
+            // Save settings using WooCommerce's method
+            parent::process_admin_options();
     
-            // 3. Only if validation and token retrieval are successful, save the options
-            foreach ($posted_values as $key => $value) {
-                $this->update_option($key, $value); // Use $this to save the options
-            }
-    
-            por_display_admin_notice(__('Settings saved and API credentials validated successfully.', 'success'));
+            // Display success notice
+            por_display_admin_notice('Settings saved and API credentials validated successfully.', 'success');
             return true;
     
         } catch (Exception $e) {
-            por_display_admin_notice(__('API credentials are invalid. Please check your settings: ' . $e->getMessage()), 'error');
+             // Disable the payment gateway
+            $this->update_option('enabled', 'no');
+
+            // Display error notice if API validation fails
+            por_display_admin_notice('API credentials are invalid. Please check your settings: ' . $e->getMessage(), 'error');
             return false; // Prevent saving settings
         }
     }
-
+    
 
     /**
      * Display payment fields on the checkout page.
@@ -598,17 +610,19 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
         return $body['data']['accessToken'];
     }
 
-    /**
+   /**
      * Display an admin notice.
      *
      * @param string $message The message to display.
      * @param string $type    The notice type ('success' or 'error').
      */
     function por_display_admin_notice($message, $type = 'error') {
+        $type = trim(strtolower($type)) ?: 'error'; // Normalize and default to 'error'
         add_action('admin_notices', function () use ($message, $type) {
             $class = ($type === 'success') ? 'notice-success' : 'notice-error';
             printf('<div class="notice %s is-dismissible"><p>%s</p></div>', esc_attr($class), esc_html($message));
         });
     }
+
     
 }
