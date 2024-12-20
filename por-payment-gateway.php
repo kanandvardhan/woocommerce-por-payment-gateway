@@ -45,6 +45,9 @@ add_action('wp_ajax_por_update_order_status', 'por_update_order_status');
 add_action('wp_ajax_nopriv_por_update_order_status', 'por_update_order_status');
 add_action('woocommerce_thankyou', 'display_payment_instructions', 10, 1);
 add_action('rest_api_init', 'update_order_status_webhook_endpoint');
+register_activation_hook(__FILE__, 'por_activation_check');
+// add_action('wp_ajax_por_resend_payment_link', 'resend_payment_link');
+// add_action('wp_ajax_nopriv_por_resend_payment_link', 'resend_payment_link');
 
 /**
  * Initialize the payment gateway.
@@ -70,6 +73,35 @@ function por_payment_gateway_settings_link($links) {
     $settings_link = '<a href="admin.php?page=wc-settings&tab=checkout&section=por_gateway">' . __('Settings', 'por-payment-gateway') . '</a>';
     array_unshift($links, $settings_link);
     return $links;
+}
+
+function por_display_admin_notice($message, $type = 'error') {
+    add_action('admin_notices', function () use ($message, $type) {
+        $class = ($type === 'success') ? 'notice-success' : 'notice-error';
+        printf('<div class="notice %s is-dismissible"><p>%s</p></div>', esc_attr($class), esc_html($message));
+    });
+}
+
+function por_activation_check() {
+    $gateway_settings = get_option('woocommerce_por_gateway_settings');
+
+    $email = $gateway_settings['email'] ?? '';
+    $app_id = $gateway_settings['app_id'] ?? '';
+    $app_secret = $gateway_settings['app_secret'] ?? '';
+    $webhook_secret = $gateway_settings['webhook_secret'] ?? '';
+
+    if (empty($email) || empty($app_id) || empty($app_secret) || empty($webhook_secret)) {
+        // Settings are missing; display the setup notice
+        por_display_admin_notice(__('Please configure your PayOnRamp API credentials in the WooCommerce settings to activate the gateway.'), 'notice');
+    } else {
+      $payment_gateway = new WC_POR_Payment_Gateway();
+      try{
+        $payment_gateway->get_access_token();
+        por_display_admin_notice(__('PayOnRamp Payment Gateway activated Successfully.', 'success'));
+      }catch(Exception $e){
+        por_display_admin_notice(__('PayOnRamp Payment Gateway activated but API credentials are invalid. Please check your settings: ' . $e->getMessage()), 'error');
+      }
+    }
 }
 
 /**
@@ -186,7 +218,7 @@ function display_payment_instructions($order_id) {
                 url: '<?php echo esc_url(admin_url('admin-ajax.php')); ?>',
                 method: 'POST',
                 data: {
-                    action: 'por_resend_payment_link',
+                    action: 'resend_payment_link',
                     order_id: '<?php echo esc_js($order_id); ?>',
                 },
                 success: function (response) {
@@ -222,32 +254,39 @@ function display_payment_instructions($order_id) {
     ?>
     <script>
     jQuery(function ($) {
-        $('#por-payment-confirm-btn').on('click', function () {
-            var button = $(this);
-            button.prop('disabled', true).text('<?php echo esc_js(__('Processing...', 'por-payment-gateway')); ?>');
+        $('#por-resend-payment-link').on('click', function (e) {
+        e.preventDefault();
+        var link = $(this);
+        var order_id = link.data('order-id');
 
-            $.ajax({
-                url: '<?php echo esc_url(admin_url('admin-ajax.php')); ?>',
-                method: 'POST',
-                data: {
+        if (link.hasClass('disabled')) {
+            return;
+        }
+
+        link.text('<?php echo esc_js(__(' sending... ', 'por-payment-gateway')); ?>');
+
+        $.ajax({
+            url: '<?php echo esc_url(admin_url('admin-ajax.php')); ?>',
+            type: 'POST',
+            data: {
                     action: 'por_update_order_status',
                     order_id: '<?php echo esc_js($order_id); ?>',
                 },
-                success: function (response) {
-                    if (response.success) {
-                        alert('<?php echo esc_js(__('Your payment will be confirmed by our team. Thank you!', 'por-payment-gateway')); ?>');
-                        button.prop('disabled', true).text('<?php echo esc_js(__('Please ignore if already paid.', 'por-payment-gateway')); ?>');
-                    } else {
-                        alert('<?php echo esc_js(__('Failed to confirm payment. Please try again.', 'por-payment-gateway')); ?>');
-                        button.prop('disabled', false).text('<?php echo esc_js(__('I have completed the payment', 'por-payment-gateway')); ?>');
-                    }
-                },
-                error: function () {
-                    alert('<?php echo esc_js(__('An error occurred. Please try again.', 'por-payment-gateway')); ?>');
-                    button.prop('disabled', false).text('<?php echo esc_js(__('I have completed the payment', 'por-payment-gateway')); ?>');
+            success: function (response) {
+                if (response.success) {
+                    alert(response.data.message);
+                } else {
+                    alert(response.data.message); // Display the error message from PHP
                 }
-            });
+                link.text('<?php echo esc_js(__('here', 'por-payment-gateway')); ?>');
+            },
+            error: function (jqXHR, textStatus, errorThrown) {
+                console.error("AJAX Error:", textStatus, errorThrown, jqXHR.responseText); // Log more details
+                alert('<?php echo esc_js(__('An error occurred. Please check the console.', 'por-payment-gateway')); ?>');
+                link.text('<?php echo esc_js(__('here', 'por-payment-gateway')); ?>');
+            }
         });
+    });
     });
     </script>
     <?php
@@ -277,6 +316,36 @@ function display_payment_instructions($order_id) {
         wp_send_json_success();
     }
 
+    function resend_payment_link() {
+        if (!isset($_POST['order_id']) || empty($_POST['order_id'])) {
+            wp_send_json_error(['message' => __('Invalid order ID.', 'por-payment-gateway')]);
+        }
+    
+        $order_id = intval($_POST['order_id']);
+        $order = wc_get_order($order_id);
+    
+        if (!$order) {
+            wp_send_json_error(['message' => __('Order not found.', 'por-payment-gateway')]);
+        }
+    
+        $reference_number = $order->get_meta('_reference_number');
+        if (!$reference_number) {
+            wp_send_json_error(['message' => __('Reference number missing. Contact support.', 'por-payment-gateway')]);
+        }
+    
+        try {
+            $payment_gateway = new WC_POR_Payment_Gateway(); // Instantiate the gateway class
+            $access_token = $payment_gateway->get_access_token();
+            $api_domain = $payment_gateway->get_option('api_domain');
+            $email_option_check = $order->get_meta('_payment_email_success') ? true : false;
+            $phone_option_check = $order->get_meta('_payment_phone_success') ? true : false;
+    
+            // ... (rest of the API call code remains the same)
+    
+        } catch (Exception $e) {
+            wp_send_json_error(['message' => $e->getMessage()]); // Send specific error message
+        }
+    }
 
     /**
      * Register the webhook endpoint with WordPress REST API.

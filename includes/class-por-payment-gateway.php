@@ -129,6 +129,49 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
         ];
     }
 
+    public function process_admin_options() {
+        // 1. Get the posted values FIRST
+        $posted_values = [];
+        foreach ($this->form_fields as $key => $field) {
+            $posted_values[$key] = isset($_POST['woocommerce_por_gateway_' . $key]) ? wc_clean($_POST['woocommerce_por_gateway_' . $key]) : '';
+        }
+    
+        // 2. Perform validation using the POSTED values
+        $email = $posted_values['email'];
+        $app_id = $posted_values['app_id'];
+        $app_secret = $posted_values['app_secret'];
+        $webhook_secret = $posted_values['webhook_secret'];
+    
+        if (empty($email) || empty($app_id) || empty($app_secret) || empty($webhook_secret)) {
+            por_display_admin_notice(__('Please fill in all required API credentials (Email, Application ID, Application Secret, and Webhook Secret).'), 'error');
+            return false; // Prevent saving settings
+        }
+    
+        try {
+            // Instantiate the gateway class to use get_access_token
+            $payment_gateway = new WC_POR_Payment_Gateway();
+    
+            // TEMPORARILY set the options within the INSTANCE for get_access_token()
+            $payment_gateway->settings['email'] = $email;
+            $payment_gateway->settings['app_id'] = $app_id;
+            $payment_gateway->settings['app_secret'] = $app_secret;
+    
+            $payment_gateway->get_access_token(); // Attempt to get the token
+    
+            // 3. Only if validation and token retrieval are successful, save the options
+            foreach ($posted_values as $key => $value) {
+                $this->update_option($key, $value); // Use $this to save the options
+            }
+    
+            por_display_admin_notice(__('Settings saved and API credentials validated successfully.', 'success'));
+            return true;
+    
+        } catch (Exception $e) {
+            por_display_admin_notice(__('API credentials are invalid. Please check your settings: ' . $e->getMessage()), 'error');
+            return false; // Prevent saving settings
+        }
+    }
+
 
     /**
      * Display payment fields on the checkout page.
@@ -501,28 +544,6 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
     }
 
     /**
-     * Handle AJAX request to update the order status.
-     */
-    public function handle_order_status_update() {
-        if (!isset($_POST['order_id'])) {
-            wp_send_json_error(['message' => __('Invalid order ID.', 'por-payment-gateway')]);
-        }
-
-        $order_id = intval($_POST['order_id']);
-        $order = wc_get_order($order_id);
-
-        if (!$order) {
-            wp_send_json_error(['message' => __('Order not found.', 'por-payment-gateway')]);
-        }
-
-        // Update order status and add note
-        $order->update_status('on-hold', __('Payment confirmed by the user.', 'por-payment-gateway'));
-        $order->add_order_note(__('Payment manually confirmed by the user via "I have completed the payment" button.', 'por-payment-gateway'));
-
-        wp_send_json_success();
-    }
-    
-    /**
      * Retrieve access token for API.
      */
     private function get_access_token() {
@@ -530,6 +551,11 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
         $app_id = $this->get_option('app_id');
         $app_secret = $this->get_option('app_secret');
         $api_domain = $this->get_option('api_domain');
+
+        error_log('email: ' . $email);
+        error_log('app_id: ' . $app_id);
+        error_log('app_secret: ' . $app_secret);
+        error_log('api_domain: ' . $api_domain);
 
         if (!$email || !$app_id || !$app_secret) {
             throw new Exception(__('Missing API credentials.', 'por-payment-gateway'));
@@ -565,70 +591,16 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
     }
 
     /**
-     * Register the webhook endpoint with WordPress REST API.
-     */
-    public function update_order_status_webhook_endpoint() {
-        register_rest_route('por-payment/v1', '/webhook', [
-            'methods'  => 'POST',
-            'callback' => [$this, 'handle_webhook_request'],
-            'permission_callback' => '__return_true', // Allow public access (validate manually)
-        ]);
-    }
-
-    /**
-     * Handle incoming webhook requests.
+     * Display an admin notice.
      *
-     * @param WP_REST_Request $request The request object containing webhook payload.
-     * @return WP_REST_Response
+     * @param string $message The message to display.
+     * @param string $type    The notice type ('success' or 'error').
      */
-    public function handle_webhook_request(WP_REST_Request $request) {
-        // Extract data from the webhook payload
-        $data = $request->get_json_params();
-        $default_order_status = $this->get_option('default_order_status');
-        $reference_number = sanitize_text_field($data['referenceNumber'] ?? '');
-        $status = sanitize_text_field($data['status'] ?? '');
-
-        // Log the request for debugging
-        error_log('Webhook Received: ' . print_r($data, true));
-
-        // Validate required data
-        if (empty($reference_number) || empty($status)) {
-            return new WP_REST_Response(['message' => 'Invalid payload.'], 400);
-        }
-
-        // Find the WooCommerce order by reference number
-        $orders = wc_get_orders([
-            'meta_key'   => '_reference_number',
-            'meta_value' => $reference_number,
-            'limit'      => 1,
-        ]);
-
-        if (empty($orders)) {
-            return new WP_REST_Response([
-                'message' => 'Order not found.'], 404);
-        }
-
-        $order = current($orders);
-
-        try {
-            // Update the order status based on the webhook status
-            if ($status === 'completed') {
-                $order->payment_complete(); // Marks order as paid
-                $order->update_status($default_order_status, __('Payment completed via webhook.', 'por-payment-gateway'));
-            } elseif ($status === 'failed') {
-                $order->update_status('failed', __('Payment failed via webhook.', 'por-payment-gateway'));
-            } else {
-                $order->add_order_note(__('Webhook received an unrecognized status: ' . $status, 'por-payment-gateway'));
-            }
-
-            $order->save();
-
-            return new WP_REST_Response(['message' => 'Order updated successfully.'], 200);
-
-        } catch (Exception $e) {
-            return new WP_REST_Response(['message' => 'Error: ' . $e->getMessage()], 500);
-        }
+    function por_display_admin_notice($message, $type = 'error') {
+        add_action('admin_notices', function () use ($message, $type) {
+            $class = ($type === 'success') ? 'notice-success' : 'notice-error';
+            printf('<div class="notice %s is-dismissible"><p>%s</p></div>', esc_attr($class), esc_html($message));
+        });
     }
-
     
 }
