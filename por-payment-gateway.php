@@ -2,12 +2,17 @@
 /*
  * Plugin Name: PayOnRamp Payment Gateway
  * Plugin URI: https://payonramp.io
- * Description: A custom payment gateway for WooCommerce by PayOnRamp.
+ * Description: Seamlessly integrate secure and efficient payment processing with the PayOnRamp Payment Gateway for WooCommerce, leveraging Interac® to provide trusted and reliable payment options for businesses of all sizes.
+ * Version: 1.0.1
  * Author: PayOnRamp
  * Author URI: https://payonramp.io
- * Version: 1.0.1
  * Text Domain: por-payment-gateway
+ * Domain Path: /languages
+ * Tags: payment gateway, WooCommerce, Interac, secure payments
+ * Network: true
+ * Contributors: payonramp
  */
+
 
 if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly
@@ -407,6 +412,7 @@ function display_payment_instructions($order_id) {
             if ($eventType === 'payment_success') {
                 if (strcasecmp($status, 'APPROVED') === 0) {
                     // $order->payment_complete();
+                    $order->add_order_note(__('Payment successfully completed via webhook. Payment Status: ' . $status, 'por-payment-gateway'));
                     $order->update_status($default_order_status, __('Payment completed via webhook.', 'por-payment-gateway'));
                 } else {
                     $order->add_order_note(__('Webhook received an unrecognized status for payment_success event: ' . $status, 'por-payment-gateway'));
@@ -418,6 +424,7 @@ function display_payment_instructions($order_id) {
                 }
             } elseif ($eventType === 'payment_pending') {
                 if (strcasecmp($status, 'PENDING') === 0) {
+                    $order->add_order_note(__('Payment marked as pending via webhook. Payment Status: ' . $status, 'por-payment-gateway'));
                     $order->update_status('pending', __('Payment is pending via webhook.', 'por-payment-gateway'));
                 } else {
                     $order->add_order_note(__('Webhook received an unrecognized status for payment_pending event: ' . $status, 'por-payment-gateway'));
@@ -429,6 +436,7 @@ function display_payment_instructions($order_id) {
                 }
             } elseif ($eventType === 'payment_failure') {
                 if (strcasecmp($status, 'REJECTED') === 0) {
+                    $order->add_order_note(__('Payment failed via webhook. Payment Status: ' . $status, 'por-payment-gateway'));
                     $order->update_status('failed', __('Payment failed via webhook.', 'por-payment-gateway'));
                 } else {
                     $order->add_order_note(__('Webhook received an unrecognized status for payment_failure event: ' . $status, 'por-payment-gateway'));
@@ -449,6 +457,7 @@ function display_payment_instructions($order_id) {
             return new WP_REST_Response($response, 200);
 
         } catch (Exception $e) {
+            $order->add_order_note(__('Error processing webhook: ' . $e->getMessage(), 'por-payment-gateway'));
             $errorResponse = [
                 'error' => true,
                 'message' => 'Error: ' . $e->getMessage(),
