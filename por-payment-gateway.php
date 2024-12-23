@@ -97,7 +97,7 @@ function display_payment_instructions($order_id) {
     }
 
     // Start WooCommerce wrapper
-    echo '<div class="woocommerce-order" style="max-width: 600px; margin: 3rem 0;">';
+    echo '<div class="woocommerce-order" style="max-width: 600px">';
     echo '<h2 class="woocommerce-order-details__title">' . __('Complete Your Payment', 'por-payment-gateway') . '</h2>';
 
     // Retrieve and display QR code
@@ -125,8 +125,8 @@ function display_payment_instructions($order_id) {
     }
 
     // Dynamic messages
-    $email_success = $order->get_meta('_payment_email_success');
-    $phone_success = $order->get_meta('_payment_phone_success');
+    $email_success = $order->get_meta('_payment_method_email');
+    $phone_success = $order->get_meta('_payment_method_phone');
 
     if ($email_success && $phone_success) {
         echo '<ul><li class="woocommerce-notice woocommerce-notice--info">' . __('A payment link has been sent to your email and phone number. Please complete the payment to finish your order.', 'por-payment-gateway') . '</li>';
