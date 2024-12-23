@@ -1,0 +1,6 @@
+1. To Resize icon displayed on checkout page try adding the following CSS to Appearance → Customize → Additional CSS
+
+.woocommerce .payment_method_por_gateway img {
+    height: auto;
+    max-width: 10%; /* Adjust this value as needed */
+}
