@@ -351,19 +351,13 @@ function display_payment_instructions($order_id) {
         $status = sanitize_text_field($data['payload']['status'] ?? '');
         $signature  = $request->get_header('X-Signature');
 
-        error_log('default_order_status: ' . $default_order_status);
-        error_log('eventType: ' . $eventType);
-        error_log('reference_number: ' . $reference_number);
-        error_log('status: ' . $status);
-        error_log('signature: ' . $signature);
-
         // Get the raw body of the request
         $raw_body = $request->get_body();
-        error_log('raw_body: ' . $raw_body);
+        // error_log('raw_body: ' . $raw_body);
 
         // Validate the signature based on the raw body
         $expected_signature = hash_hmac('sha256', $raw_body, $webhook_secret);
-        error_log('expected_signature: ' . $expected_signature);
+        // error_log('expected_signature: ' . $expected_signature);
 
         if ($signature !== $expected_signature) {
             return new WP_REST_Response([
@@ -373,7 +367,7 @@ function display_payment_instructions($order_id) {
         }
 
         // Log the request for debugging
-        error_log('Webhook Received: ' . print_r($data, true));
+        // error_log('Webhook Received: ' . print_r($data, true));
 
         // Validate required data
         if (empty($reference_number) || empty($status) || empty($eventType)) {
