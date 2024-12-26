@@ -193,11 +193,11 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
         echo '<p><input type="checkbox" id="por_qr_code" name="por_qr_code" checked disabled> ' . __('QR Code', 'por-payment-gateway') . '</p>';
 
         if ($this->get_option('enable_email') === 'yes') {
-            echo '<p><input type="checkbox" id="por_email" name="por_email"> ' . __('Email', 'por-payment-gateway') . '</p>';
+            echo '<p><input type="checkbox" id="por_email" name="por_email" checked> ' . __('Email', 'por-payment-gateway') . '</p>';
         }
 
         if ($this->get_option('enable_phone') === 'yes') {
-            echo '<p><input type="checkbox" id="por_phone" name="por_phone" > ' . __('Phone Number', 'por-payment-gateway') . '</p>';
+            echo '<p><input type="checkbox" id="por_phone" name="por_phone" checked> ' . __('Phone Number', 'por-payment-gateway') . '</p>';
         }
 
         echo '</fieldset>';
