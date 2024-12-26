@@ -9,7 +9,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
     public function __construct() {
         
         $this->id = 'por_gateway'; // Payment gateway ID.
-        $this->icon = POR_PAYMENT_GATEWAY_PLUGIN_URL . 'assets/images/interac_logo.png';
+        $this->icon = POR_PAYMENT_GATEWAY_PLUGIN_URL . 'assets/images/interac_logo_legacy.png';
         $this->method_title = __('PayOnRamp Payment Gateway', 'por-payment-gateway');
         $this->method_description = __('A custom payment gateway by PayOnRamp.', 'por-payment-gateway');
         $this->has_fields = true; // Enable custom fields on the checkout page.

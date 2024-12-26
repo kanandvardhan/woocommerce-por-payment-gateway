@@ -315,8 +315,6 @@ function display_payment_instructions($order_id) {
             $email_option_check = $order->get_meta('_payment_email_success') ? true : false;
             $phone_option_check = $order->get_meta('_payment_phone_success') ? true : false;
     
-            // ... (rest of the API call code remains the same)
-    
         } catch (Exception $e) {
             wp_send_json_error(['message' => $e->getMessage()]); // Send specific error message
         }
