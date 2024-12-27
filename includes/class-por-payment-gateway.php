@@ -11,7 +11,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
         $this->id = 'por_gateway'; // Payment gateway ID.
         $this->icon = POR_PAYMENT_GATEWAY_PLUGIN_URL . 'assets/images/interac_logo_legacy.png';
         $this->method_title = __('PayOnRamp Payment Gateway', 'por-payment-gateway');
-        $this->method_description = __('A custom payment gateway by PayOnRamp.', 'por-payment-gateway');
+        $this->method_description = __('Enable seamless and secure payments with the PayOnRamp Gateway, providing flexible payment options like Interac® for an optimized checkout experience.', 'por-payment-gateway');
         $this->has_fields = true; // Enable custom fields on the checkout page.
         
         // Supported WooCommerce features.
@@ -290,7 +290,8 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
             error_log('response_body-email: ' . $response_body['email'] ?? false);
             error_log('response_body-phone: ' . $response_body['phone'] || !$response_body['phone']['error']);
 
-             // Save selected methods to meta, irrespective of response.
+            // Add order note.
+            $order->add_order_note(__('Payment initiated by the user using PayOnRamp Payment Gateway. ~Processed by PayOnRamp.', 'por-payment-gateway'));
 
             // Set order status.
             $order->update_status('pending', __('Payment initiated. Awaiting user confirmation.', 'por-payment-gateway'));

@@ -403,12 +403,11 @@ function display_payment_instructions($order_id) {
         try {
             if ($eventType === 'payment_success') {
                 if (strcasecmp($status, 'APPROVED') === 0) {
-                    // $order->payment_complete();
-                    $order->add_order_note(__('Payment successfully completed via webhook. Payment Status: ' . $status, 'por-payment-gateway'));
-                    $order->update_status($default_order_status, __('Payment completed via webhook.', 'por-payment-gateway'));
+                    $order->add_order_note(__('Webhook Notification: Payment successfully completed. Status: ' . $status . '. ~Processed by PayOnRamp.', 'por-payment-gateway'));
+                    $order->update_status($default_order_status, __('Payment confirmed via webhook. ~Processed by PayOnRamp.', 'por-payment-gateway'));
                 } else {
-                    $order->add_order_note(__('Webhook received an unrecognized status for payment_success event: ' . $status, 'por-payment-gateway'));
-                    error_log('Unrecognized webhook status for payment_success event: ' . $status);
+                    $order->add_order_note(__('Webhook Notification: Received an unrecognized status ("' . $status . '") for a successful payment event. Please review. ~Processed by PayOnRamp.', 'por-payment-gateway'));
+                    error_log('Unrecognized webhook status for payment_success event: ' . $status . '. ~Processed by PayOnRamp.');
                     return new WP_REST_Response([
                         'error' => true,
                         'message' => 'Invalid status for payment_success event.',
@@ -416,11 +415,11 @@ function display_payment_instructions($order_id) {
                 }
             } elseif ($eventType === 'payment_pending') {
                 if (strcasecmp($status, 'PENDING') === 0) {
-                    $order->add_order_note(__('Payment marked as pending via webhook. Payment Status: ' . $status, 'por-payment-gateway'));
-                    $order->update_status('pending', __('Payment is pending via webhook.', 'por-payment-gateway'));
+                    $order->add_order_note(__('Webhook Notification: Payment is pending. Status: ' . $status . '. Awaiting further actions. ~Processed by PayOnRamp.', 'por-payment-gateway'));
+                    $order->update_status('pending', __('Payment pending. Awaiting user confirmation. ~Processed by PayOnRamp.', 'por-payment-gateway'));
                 } else {
-                    $order->add_order_note(__('Webhook received an unrecognized status for payment_pending event: ' . $status, 'por-payment-gateway'));
-                    error_log('Unrecognized webhook status for payment_pending event: ' . $status);
+                    $order->add_order_note(__('Webhook Notification: Received an unrecognized status ("' . $status . '") for a pending payment event. Please review. ~Processed by PayOnRamp.', 'por-payment-gateway'));
+                    error_log('Unrecognized webhook status for payment_pending event: ' . $status . '. ~Processed by PayOnRamp.');
                     return new WP_REST_Response([
                         'error' => true,
                         'message' => 'Invalid status for payment_pending event.',
@@ -428,11 +427,11 @@ function display_payment_instructions($order_id) {
                 }
             } elseif ($eventType === 'payment_failure') {
                 if (strcasecmp($status, 'REJECTED') === 0) {
-                    $order->add_order_note(__('Payment failed via webhook. Payment Status: ' . $status, 'por-payment-gateway'));
-                    $order->update_status('failed', __('Payment failed via webhook.', 'por-payment-gateway'));
+                    $order->add_order_note(__('Webhook Notification: Payment failed. Status: ' . $status . '. Please contact the customer. ~Processed by PayOnRamp.', 'por-payment-gateway'));
+                    $order->update_status('failed', __('Payment failed. Please review. ~Processed by PayOnRamp.', 'por-payment-gateway'));
                 } else {
-                    $order->add_order_note(__('Webhook received an unrecognized status for payment_failure event: ' . $status, 'por-payment-gateway'));
-                    error_log('Unrecognized webhook status for payment_failure event: ' . $status);
+                    $order->add_order_note(__('Webhook Notification: Received an unrecognized status ("' . $status . '") for a failed payment event. Please review. ~Processed by PayOnRamp.', 'por-payment-gateway'));
+                    error_log('Unrecognized webhook status for payment_failure event: ' . $status . '. ~Processed by PayOnRamp.');
                     return new WP_REST_Response([
                         'error' => true,
                         'message' => 'Invalid status for payment_failure event.',
@@ -440,16 +439,16 @@ function display_payment_instructions($order_id) {
                 }
             }
             $order->save(); // Save the order only ONCE after status updates.
-
+        
             $response = [
                 'error' => false,
                 'message' => 'Order updated successfully.',
             ];
             error_log('Response Data: ' . print_r($response, true));
             return new WP_REST_Response($response, 200);
-
+        
         } catch (Exception $e) {
-            $order->add_order_note(__('Error processing webhook: ' . $e->getMessage(), 'por-payment-gateway'));
+            $order->add_order_note(__('Webhook Processing Error: ' . $e->getMessage() . '. Please investigate. ~Processed by PayOnRamp.', 'por-payment-gateway'));
             $errorResponse = [
                 'error' => true,
                 'message' => 'Error: ' . $e->getMessage(),
