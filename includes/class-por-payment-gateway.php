@@ -39,7 +39,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
         $this->form_fields = [
             'enabled' => [
                 'title'   => __('Enable/Disable', 'por-payment-gateway'),
-                'label'   => __('Enable POR Payment Gateway', 'por-payment-gateway'),
+                'label'   => __('Enable PayOnRamp Payment Gateway', 'por-payment-gateway'),
                 'type'    => 'checkbox',
                 'default' => 'no',
             ],
@@ -294,10 +294,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
             $order->add_order_note(__('Payment initiated by the user using PayOnRamp Payment Gateway. ~Processed by PayOnRamp.', 'por-payment-gateway'));
 
             // Set order status.
-            $order->update_status('pending', __('Payment initiated. Awaiting user confirmation.', 'por-payment-gateway'));
-
-            // Add order note.
-            $order->add_order_note(__('Payment initiated by the user using PayOnRamp Payment Gateway', 'por-payment-gateway'));
+            $order->update_status('on-hold', __('Payment initiated. Awaiting user confirmation. ~Processed by PayOnRamp.', 'por-payment-gateway'));
             
             return [
                 'result'   => 'success',

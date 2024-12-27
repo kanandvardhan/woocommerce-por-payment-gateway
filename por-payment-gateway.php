@@ -284,9 +284,8 @@ function display_payment_instructions($order_id) {
             wp_send_json_error(['message' => __('Order not found.', 'por-payment-gateway')]);
         }
 
-        // Update order status and add note
-        $order->update_status('on-hold', __('Payment confirmed by the user.', 'por-payment-gateway'));
-        $order->add_order_note(__('Payment manually confirmed by the user via "I have completed the payment" button.', 'por-payment-gateway'));
+        // Add note to inform admin that the payment has been confirmed by the customer
+        $order->add_order_note(__('Payment manually confirmed by the user via "I have completed the payment" button. ~Processed by PayOnRamp.', 'por-payment-gateway'));
 
         wp_send_json_success();
     }
