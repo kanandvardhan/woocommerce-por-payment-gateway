@@ -50,6 +50,7 @@ add_action('wp_ajax_por_update_order_status', 'por_update_order_status');
 add_action('wp_ajax_nopriv_por_update_order_status', 'por_update_order_status');
 add_action('woocommerce_thankyou', 'display_payment_instructions', 10, 1);
 add_action('rest_api_init', 'update_order_status_webhook_endpoint');
+add_action('admin_notices', 'por_webhook_setup_notice');
 // add_action('wp_ajax_por_resend_payment_link', 'resend_payment_link');
 // add_action('wp_ajax_nopriv_por_resend_payment_link', 'resend_payment_link');
 
@@ -456,3 +457,24 @@ function display_payment_instructions($order_id) {
             return new WP_REST_Response($errorResponse, 500);
         }
     }
+
+function por_webhook_setup_notice() {
+
+    $settings = get_option('woocommerce_por_gateway_settings');
+    $is_enabled = isset($settings['enabled']) && $settings['enabled'] === 'yes';
+
+    if (!$is_enabled) {
+        return; 
+    }
+
+    $screen = get_current_screen();
+    if ($screen->id === 'woocommerce_page_wc-settings' && isset($_GET['section']) && $_GET['section'] === 'por_gateway') {
+        echo '<div class="notice notice-info is-dismissible">';
+        echo '<p>' . esc_html__('Ensure your webhook is correctly configured to receive payment updates and keep your orders synchronized with transaction statuses. Proper webhook configuration is essential for the payment gateway to function optimally.', 'por-payment-gateway') . '</p>';
+        echo '<p>' . sprintf(
+            esc_html__('Webhook URL: %s', 'por-payment-gateway'),
+            '<code>' . esc_url(home_url('/wp-json/por-payment/v1/webhook')) . '</code>'
+        ) . '</p>';
+        echo '</div>';
+    }
+}
