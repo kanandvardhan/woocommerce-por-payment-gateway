@@ -3,7 +3,7 @@
  * Plugin Name: PayOnRamp Payment Gateway
  * Plugin URI: https://payonramp.io
  * Description: Seamlessly integrate secure and efficient payment processing with the PayOnRamp Payment Gateway for WooCommerce, leveraging Interac® to provide trusted and reliable payment options for businesses of all sizes.
- * Version: 1.0.1
+ * Version: 1.0.2
  * Author: PayOnRamp
  * Author URI: https://payonramp.io
  * Text Domain: por-payment-gateway
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define constants
-define('POR_PAYMENT_GATEWAY_VERSION', '1.0.1');
+define('POR_PAYMENT_GATEWAY_VERSION', '1.0.2');
 define('POR_PAYMENT_GATEWAY_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('POR_PAYMENT_GATEWAY_PLUGIN_PATH', plugin_dir_path(__FILE__));
 
