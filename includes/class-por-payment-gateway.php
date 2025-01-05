@@ -130,7 +130,22 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
         // Get posted values first
         $posted_values = [];
         foreach ($this->form_fields as $key => $field) {
-            $posted_values[$key] = isset($_POST['woocommerce_por_gateway_' . $key]) ? wc_clean($_POST['woocommerce_por_gateway_' . $key]) : '';
+            if (isset($_POST['woocommerce_por_gateway_' . $key])) {
+                switch ($field['type']) {
+                    case 'checkbox':
+                        $posted_values[$key] = isset($_POST['woocommerce_por_gateway_' . $key]) ? 'yes' : 'no';
+                        break;
+                    case 'textarea':
+                        $posted_values[$key] = sanitize_textarea_field($_POST['woocommerce_por_gateway_' . $key]);
+                        break;
+                    case 'text':
+                    default:
+                        $posted_values[$key] = sanitize_text_field($_POST['woocommerce_por_gateway_' . $key]);
+                        break;
+                }
+            } else {
+                $posted_values[$key] = '';
+            }
         }
     
         // Validate required fields
@@ -140,19 +155,21 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
         $app_secret = $posted_values['app_secret'];
         $webhook_secret = $posted_values['webhook_secret'];
     
-        if (empty($api_domain) || empty($email) || empty($app_id) || empty($app_secret) || empty($webhook_secret)) {
-            por_display_admin_notice('Please fill in all required API credentials (API Domain, Email, Application ID, Application Secret, and Webhook Secret).', 'error');
-            return false; // Prevent saving settings
-        }
-
         // Ensure at least one payment method is enabled
         // $enable_qr_code = !empty($posted_values['enable_qr_code']);
         $enable_email = !empty($posted_values['enable_email']);
         $enable_phone = !empty($posted_values['enable_phone']);
 
         if (!$enable_email && !$enable_phone) {
-            por_display_admin_notice('At least one payment method (QR Code, Email, or Phone) must be enabled.', 'error');
-            return false; // Prevent saving settings
+            $this->update_option('enabled', 'no');
+            por_display_admin_notice('Atleast one payment option Email or Phone must be enabled.', 'error');
+            return false;
+        }
+
+        if (empty($api_domain) || empty($email) || empty($app_id) || empty($app_secret) || empty($webhook_secret)) {
+            $this->update_option('enabled', 'no');
+            por_display_admin_notice('Please fill in all required API credentials (API Domain, Email, Application ID, Application Secret, and Webhook Secret).', 'error');
+            return false;
         }
     
         try {
@@ -166,19 +183,17 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
             $this->get_access_token();
     
             // Save settings using WooCommerce's method
-            parent::process_admin_options();
-    
-            // Display success notice
-            por_display_admin_notice('Settings saved and API credentials validated successfully.', 'success');
-            return true;
-    
+            if (parent::process_admin_options()) {
+                por_display_admin_notice('Settings saved and API credentials validated successfully.', 'success');
+                return true;
+            }
         } catch (Exception $e) {
              // Disable the payment gateway
             $this->update_option('enabled', 'no');
 
             // Display error notice if API validation fails
             por_display_admin_notice('API credentials are invalid. Please check your settings: ' . $e->getMessage(), 'error');
-            return false; // Prevent saving settings
+            return true; 
         }
     }
     
@@ -212,7 +227,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
         $phone_checked = isset($_POST['por_phone']);
 
         if (!$email_checked && !$phone_checked) {
-            wc_add_notice(__('Please select at least one other payment method (Email or Phone).', 'por-payment-gateway'), 'error');
+            wc_add_notice(__('Please select atleast one additional payment option (Email or Phone).', 'por-payment-gateway'), 'error');
             return false;
         }
 
@@ -301,8 +316,8 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
             $order->update_meta_data('_reference_number', $response_body['response']['ReferenceNumber'] ?? '');
             $order->update_meta_data('_qr_code', $response_body['image'] ?? '');
             $order->update_meta_data('_payment_link', $response_body['link'] ?? '');
-            $order->update_meta_data('_payment_method_email', isset($_POST['por_email']) ? true : false);
-            $order->update_meta_data('_payment_method_phone', isset($_POST['por_phone']) ? true : false);
+            $order->update_meta_data('_payment_option_email', isset($_POST['por_email']) ? true : false);
+            $order->update_meta_data('_payment_option_phone', isset($_POST['por_phone']) ? true : false);
             $order->save();
             error_log('response_body-email: ' . $response_body['email'] ?? false);
             error_log('response_body-phone: ' . $response_body['phone'] || !$response_body['phone']['error']);
