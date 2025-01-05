@@ -248,6 +248,23 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
         $order = wc_get_order($order_id);
         $api_domain = $this->get_option('api_domain');
 
+        // Optionally, check if a payment is already in progress
+        $payment_initiated = $order->get_meta('_reference_number');
+        if ($payment_initiated) {
+            $payment_url = $this->get_return_url($order) . '&payment_status=awaiting_payment';
+
+            // Add a notice with a link to continue the previous payment
+            wc_add_notice(
+                sprintf(
+                    __('Payment for this order has already been initiated. %s', 'por-payment-gateway'),
+                    '<a href="' . esc_url($payment_url) . '" class="button-link">' . __('Continue Payment', 'por-payment-gateway') . '</a>'
+                ),
+                'notice'
+            );
+
+            return ['result' => 'failure'];
+        }
+
         try {
             // Generate access token and make API call.
             $access_token = $this->get_access_token();
