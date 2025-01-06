@@ -66,13 +66,13 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
             'enable_email' => [
                 'title'   => __('Enable/Disable Email', 'por-payment-gateway'),
                 'type'    => 'checkbox',
-                'label'   => __('Allow payment via Email', 'por-payment-gateway'),
+                'label'   => __('Allow sending payment link via Email', 'por-payment-gateway'),
                 'default' => 'yes',
             ],
             'enable_phone' => [
                 'title'   => __('Enable/Disable Phone Number', 'por-payment-gateway'),
                 'type'    => 'checkbox',
-                'label'   => __('Allow payment via Phone Number', 'por-payment-gateway'),
+                'label'   => __('Allow sending payment link via Phone Number', 'por-payment-gateway'),
                 'default' => 'yes',
             ],
             'default_order_status' => array(
@@ -86,7 +86,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
             'api_domain' => [
                 'title'       => __('API Domain', 'por-payment-gateway'),
                 'type'        => 'text',
-                'description' => __('Enter the API domain for PayOnRamp integration.', 'por-payment-gateway'),
+                'description' => __('Enter the API domain for PayOnRamp payment integration. (Required)', 'por-payment-gateway'),
                 'default'     => 'https://dev-api.payonramp.io',
                 'desc_tip'    => true,
                 // 'required' => true
@@ -94,7 +94,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
             'email' => [
                 'title'       => __('Application Email', 'por-payment-gateway'),
                 'type'        => 'text',
-                'description' => __('Enter the email to authenticate the API.', 'por-payment-gateway'),
+                'description' => __('Enter the email to authenticate the API. (Required)', 'por-payment-gateway'),
                 'default'     => '',
                 'desc_tip'    => true,
                 // 'required' => true
@@ -102,7 +102,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
             'app_id' => [
                 'title'       => __('Application ID', 'por-payment-gateway'),
                 'type'        => 'text',
-                'description' => __('Enter the Application ID for the API.', 'por-payment-gateway'),
+                'description' => __('Enter the Application ID for the API. (Required)', 'por-payment-gateway'),
                 'default'     => '',
                 'desc_tip'    => true,
                 // 'required' => true
@@ -110,7 +110,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
             'app_secret' => [
                 'title'       => __('Application Secret', 'por-payment-gateway'),
                 'type'        => 'text',
-                'description' => __('Enter the secret for the API.', 'por-payment-gateway'),
+                'description' => __('Enter the secret for the API. (Required)', 'por-payment-gateway'),
                 'default'     => '',
                 'desc_tip'    => true,
                 // 'required' => true
@@ -118,7 +118,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
             'webhook_secret' => [
                 'title'       => __('Webhook Secret', 'por-payment-gateway'),
                 'type'        => 'text',
-                'description' => __('Enter the secret for the webhook used for payment status updates.', 'por-payment-gateway'),
+                'description' => __('Enter the secret for the webhook used for payment status updates. (Required)', 'por-payment-gateway'),
                 'default'     => '',
                 'desc_tip'    => true,
                 // 'required' => true
@@ -212,7 +212,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
         }
 
         if ($this->get_option('enable_phone') === 'yes') {
-            echo '<p><input type="checkbox" id="por_phone" name="por_phone" checked> ' . __('Phone Number', 'por-payment-gateway') . '</p>';
+            echo '<p><input type="checkbox" id="por_phone" name="por_phone"> ' . __('Phone Number', 'por-payment-gateway') . '</p>';
         }
 
         echo '</fieldset>';
@@ -281,13 +281,20 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
         }
 
         try {
+
+            // Ensure phone number includes country code
+            $phone = $order->get_billing_phone();
+            if (!preg_match('/^\+/', $phone)) { // Check if phone number starts with '+'
+                $phone = '+1' . ltrim($phone, '0'); // Append +1 and remove leading zero if exists
+            }
+
             // Generate access token and make API call.
             $access_token = $this->get_access_token();
             $data = [
                 'email'            => $order->get_billing_email(),
                 'amount'           => (string) $order->get_total(),
                 'name'             => $order->get_billing_first_name() . '-' . $order->get_id(),
-                'phoneNumber'      => $order->get_billing_phone(),
+                'phoneNumber'      => $phone,
                 'phoneNumberCheck' => isset($_POST['por_phone']),
                 'emailOptionCheck' => isset($_POST['por_email']),
             ];
@@ -319,8 +326,6 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
             $order->update_meta_data('_payment_option_email', isset($_POST['por_email']) ? true : false);
             $order->update_meta_data('_payment_option_phone', isset($_POST['por_phone']) ? true : false);
             $order->save();
-            error_log('response_body-email: ' . $response_body['email'] ?? false);
-            error_log('response_body-phone: ' . $response_body['phone'] || !$response_body['phone']['error']);
 
             // Add order note.
             $order->add_order_note(__('Payment initiated by the user using PayOnRamp Payment Gateway. ~Processed by PayOnRamp.', 'por-payment-gateway'));
@@ -347,11 +352,6 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
         $app_id = $this->get_option('app_id');
         $app_secret = $this->get_option('app_secret');
         $api_domain = $this->get_option('api_domain');
-
-        error_log('email: ' . $email);
-        error_log('app_id: ' . $app_id);
-        error_log('app_secret: ' . $app_secret);
-        error_log('api_domain: ' . $api_domain);
 
         if (!$email || !$app_id || !$app_secret) {
             throw new Exception(__('Missing API credentials.', 'por-payment-gateway'));
