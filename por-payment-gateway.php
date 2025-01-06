@@ -46,8 +46,8 @@ if (!in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get
 add_action('plugins_loaded', 'por_payment_gateway_init');
 add_filter('woocommerce_payment_gateways', 'add_por_gateway_class');
 add_filter('plugin_action_links_' . plugin_basename(__FILE__), 'por_payment_gateway_settings_link');
-add_action('wp_ajax_por_update_order_status', 'por_update_order_status');
-add_action('wp_ajax_nopriv_por_update_order_status', 'por_update_order_status');
+add_action('wp_ajax_por_update_order_notes', 'por_update_order_notes');
+add_action('wp_ajax_nopriv_por_update_order_notes', 'por_update_order_notes');
 add_action('woocommerce_thankyou', 'display_payment_instructions', 10, 1);
 add_action('rest_api_init', 'update_order_status_webhook_endpoint');
 add_action('admin_notices', 'por_webhook_setup_notice');
@@ -106,6 +106,15 @@ function display_payment_instructions($order_id) {
     echo '<div class="woocommerce-order" style="max-width: 600px">';
     echo '<h2 class="woocommerce-order-details__title">' . __('Complete Your Payment', 'por-payment-gateway') . '</h2>';
 
+    // Retrieve and display payment reference number
+    $reference_number = $order->get_meta('_reference_number');
+    if ($reference_number) {
+        echo '<p style="font-weight: bold; color: #333;">' . __('Interac e-Transfer Reference #:', 'por-payment-gateway') . ' <span style="color: #0073aa;">' . esc_html($reference_number) . '</span></p>';
+        echo '<p style="color: red; font-size: 0.9em;">' . __('Important: Proceed with the payment only if the above reference number is linked to this order.', 'por-payment-gateway') . '</p>';
+    } else {
+        echo '<p style="color: red; font-size: 0.9em;">' . __('Reference number is missing. Please contact support before proceeding.', 'por-payment-gateway') . '</p>';
+    }
+
     // Retrieve and display QR code
     $qr_code = $order->get_meta('_qr_code');
     if ($qr_code) {
@@ -135,11 +144,11 @@ function display_payment_instructions($order_id) {
     $phone_success = $order->get_meta('_payment_option_phone');
 
     if ($email_success && $phone_success) {
-        echo '<ul><li class="woocommerce-notice woocommerce-notice--info">' . __('A payment link has been sent to your email and phone number. Please complete the payment to finish your order.', 'por-payment-gateway') . '</li>';
+        echo '<ul><li class="woocommerce-notice woocommerce-notice--info">' . __('Additionally, a payment link has been sent to your email and phone number. Please complete the payment to finish your order. Ensure the payment details are accurate before completing the transaction.', 'por-payment-gateway') . '</li>';
     } elseif ($email_success) {
-        echo '<li class="woocommerce-notice woocommerce-notice--info">' . __('A payment link has been sent to your email. Please complete the payment to finish your order.', 'por-payment-gateway') . '</li>';
+        echo '<li class="woocommerce-notice woocommerce-notice--info">' . __('Additionally, a payment link has been sent to your email. Please complete the payment to finish your order. Ensure the payment details are accurate before completing the transaction.', 'por-payment-gateway') . '</li>';
     } elseif ($phone_success) {
-        echo '<li class="woocommerce-notice woocommerce-notice--info">' . __('A payment link has been sent to your phone number. Please complete the payment to finish your order.', 'por-payment-gateway') . '</li>';
+        echo '<li class="woocommerce-notice woocommerce-notice--info">' . __('Additionally, a payment link has been sent to your phone number. Please complete the payment to finish your order. Ensure the payment details are accurate before completing the transaction.', 'por-payment-gateway') . '</li>';
     }
     
 
@@ -226,7 +235,7 @@ function display_payment_instructions($order_id) {
     </script>
     <?php
 
-    echo '<li>' . __('Once the payment is complete, click the button below to confirm.', 'por-payment-gateway') . '</li></ul>';
+    echo '<li>' . __('Once the payment is complete, clicking the button below is <u>optional</u> but recommended. It helps our team verify your payment faster.', 'por-payment-gateway') . '</li></ul>';
 
     // Confirmation button
     echo '<div class="form-row form-row-wide" style="text-align: center; margin-top: 20px;">';
@@ -245,7 +254,7 @@ function display_payment_instructions($order_id) {
                 url: '<?php echo esc_url(admin_url('admin-ajax.php')); ?>',
                 method: 'POST',
                 data: {
-                    action: 'por_update_order_status',
+                    action: 'por_update_order_notes',
                     order_id: '<?php echo esc_js($order_id); ?>',
                 },
                 success: function (response) {
@@ -273,7 +282,7 @@ function display_payment_instructions($order_id) {
     /**
      * Handle AJAX request to update the order status.
      */
-    function por_update_order_status() {
+    function por_update_order_notes() {
         if (!isset($_POST['order_id'])) {
             wp_send_json_error(['message' => __('Invalid order ID.', 'por-payment-gateway')]);
         }
