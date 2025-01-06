@@ -66,14 +66,14 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
             'enable_email' => [
                 'title'   => __('Enable/Disable Email', 'por-payment-gateway'),
                 'type'    => 'checkbox',
-                'label'   => __('Allow sending payment link via Email', 'por-payment-gateway'),
+                'label'   => __('Allow sending payment link to customer via Email', 'por-payment-gateway'),
                 'default' => 'yes',
             ],
             'enable_phone' => [
                 'title'   => __('Enable/Disable Phone Number', 'por-payment-gateway'),
                 'type'    => 'checkbox',
-                'label'   => __('Allow sending payment link via Phone Number', 'por-payment-gateway'),
-                'default' => 'yes',
+                'label'   => __('Allow sending payment link to customer via Phone Number', 'por-payment-gateway'),
+                'default' => 'no',
             ],
             'default_order_status' => array(
                 'title' => __( 'Order Status After Successful Payment', 'por-payment-gateway' ),
@@ -262,6 +262,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
     public function process_payment($order_id) {
         $order = wc_get_order($order_id);
         $api_domain = $this->get_option('api_domain');
+        $canada_country_phone_code = '+1';
 
         // Optionally, check if a payment is already in progress
         $payment_initiated = $order->get_meta('_reference_number');
@@ -285,7 +286,7 @@ class WC_POR_Payment_Gateway extends WC_Payment_Gateway {
             // Ensure phone number includes country code
             $phone = $order->get_billing_phone();
             if (!preg_match('/^\+/', $phone)) { // Check if phone number starts with '+'
-                $phone = '+1' . ltrim($phone, '0'); // Append +1 and remove leading zero if exists
+                $phone = $canada_country_phone_code . ltrim($phone, '0'); // Append +1 and remove leading zero if exists
             }
 
             // Generate access token and make API call.
